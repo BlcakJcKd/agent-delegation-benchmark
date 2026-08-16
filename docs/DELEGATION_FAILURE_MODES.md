@@ -49,3 +49,47 @@ a delegation, pipx, Git, or installation failure — see
 
 Zero model/paid calls were made for this validation; every case above is
 reachable and provable with mocks or a harmless local `sleep`.
+
+## Zero-model-call discovery subprocesses must not inherit caller stdin
+
+`delegation/preflight.py` and `benchmark/preflight.py` (the `check`/
+`run_preflight` paths behind `python -m delegation.preflight` and
+`python -m benchmark.runner preflight`/`check`) each run short-lived
+discovery probes — `<cli> --version`, `<cli> --help` / `exec --help`, and
+`agy models` — that are documented and relied upon as making *no* model
+call. Both funnel every such probe through a private `_capture()` helper
+that wrapped `subprocess.run(command, text=True, capture_output=True)`
+with no `stdin` argument, so the child inherited whichever file descriptor
+the calling process's stdin happened to be.
+
+That is only safe if nothing upstream ever pipes real content into that
+stdin. It is not: `agy` treats non-empty piped stdin as an inline
+conversational prompt regardless of subcommand, so `agy models` run with
+piped text reaching it makes a real (if not PAYG-billed) model call
+instead of the metadata listing the check expects — silently converting a
+"no model invocation" step into one, and doing so before any of this
+project's explicit paid-run confirmation prompts are ever reached. This was
+found by hand: running a benchmark launcher script under a piped stdin
+(anything upstream of its confirmation `read`, including the confirmation
+answer itself, sits in the same inherited pipe) caused `agy` to reply
+conversationally instead of returning its model list.
+
+Fix: `_capture()` in both modules now passes `stdin=subprocess.DEVNULL`
+explicitly, so every discovery/version/help probe always sees a closed
+stdin (immediate EOF) regardless of what the parent process's stdin is
+connected to. Covered by
+[`tests/test_preflight_stdin_isolation.py`](../tests/test_preflight_stdin_isolation.py),
+which mocks `subprocess.run` throughout (the real `agy`/`claude`/
+`codex-deepseek` binaries are never invoked) and asserts `stdin=DEVNULL` on
+every discovery call made by `delegation.preflight.check()` and
+`benchmark.preflight.run_preflight()`, including the specific `agy models`
+call.
+
+The general lesson: any subprocess a "no model invocation" code path
+spawns must have its stdin explicitly closed or redirected, not merely
+left unset — "unset" means "inherited," and an inherited stdin can carry
+prompt-bearing content the check's author never intended it to see. The
+delegate-invoking path in `delegation/core.py::run_consultation` is exempt
+from this concern by construction: the prompt there is always the final
+argv element, never delivered over stdin, so there is nothing for an
+inherited stdin to be misread as.

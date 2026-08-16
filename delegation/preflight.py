@@ -32,7 +32,11 @@ HELP_ARGS: dict[str, tuple[str, ...]] = {
 
 
 def _capture(command: list[str]) -> tuple[int, str]:
-    completed = subprocess.run(command, text=True, capture_output=True)
+    # stdin=DEVNULL: these are zero-model-call discovery/version/help probes
+    # (e.g. `agy models`) and must never be able to read caller-inherited
+    # stdin -- some CLIs treat unexpected piped stdin as an inline prompt,
+    # which would turn a "no model invocation" check into a real one.
+    completed = subprocess.run(command, text=True, capture_output=True, stdin=subprocess.DEVNULL)
     return completed.returncode, completed.stdout + completed.stderr
 
 
