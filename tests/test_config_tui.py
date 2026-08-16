@@ -32,8 +32,11 @@ class BuildRowsTests(unittest.TestCase):
         rows = build_rows(default_config())
         provider_names = [r.name for r in rows if r.kind == "provider"]
         model_names = [r.name for r in rows if r.kind == "model"]
-        self.assertEqual(sorted(provider_names), ["claude", "codex", "gemini"])
-        self.assertEqual(sorted(model_names), ["flash", "haiku", "luna", "sonnet", "terra"])
+        self.assertEqual(sorted(provider_names), ["claude", "codex", "deepseek", "gemini", "minimax"])
+        self.assertEqual(
+            sorted(model_names),
+            ["deepseek-flash", "deepseek-pro", "flash", "haiku", "luna", "minimax-m3", "sonnet", "terra"],
+        )
 
     def test_row_state_reflects_config(self):
         config = set_enabled(default_config(), "providers", "codex", False, reason="quota low")
@@ -41,6 +44,16 @@ class BuildRowsTests(unittest.TestCase):
         codex_row = next(r for r in rows if r.kind == "provider" and r.name == "codex")
         self.assertFalse(codex_row.enabled)
         self.assertEqual(codex_row.reason, "quota low")
+
+    def test_payg_providers_and_routes_start_disabled_with_a_reason(self):
+        rows = build_rows(default_config())
+        for name in ("deepseek", "minimax"):
+            row = next(r for r in rows if r.kind == "provider" and r.name == name)
+            self.assertFalse(row.enabled)
+            self.assertEqual(row.reason, "experimental PAYG; benchmark pending")
+        for name in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+            row = next(r for r in rows if r.kind == "model" and r.name == name)
+            self.assertFalse(row.enabled)
 
 
 class ToggleTests(unittest.TestCase):

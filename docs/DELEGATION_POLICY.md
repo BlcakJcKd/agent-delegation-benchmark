@@ -40,6 +40,19 @@ user (e.g. quota exhausted) independent of this guidance — check
 [DELEGATE_CONFIGURATION.md](DELEGATE_CONFIGURATION.md) for the config that
 governs it and who's allowed to change it.
 
+### Experimental PAYG routes: not yet in this table
+
+`deepseek-pro`, `deepseek-flash`, and `minimax-m3` (via `ask-deepseek-pro`/
+`ask-deepseek-flash`/`ask-minimax-m3`) exist as optional, pay-as-you-go
+transport through independently verified Codex provider-profile launchers —
+see [PAYG_DELEGATES.md](PAYG_DELEGATES.md). They are deliberately **excluded**
+from the evidence-based table above: no benchmark run has evaluated them, so
+this policy makes no claim about where they fit relative to Flash, Haiku,
+Sonnet, or Terra. They default to disabled and require an explicit
+`delegate-config` opt-in. Run `delegate-status --primary <identity>` before
+considering one, and do not let an unbenchmarked PAYG route displace the
+evidence-based recommendations above.
+
 ## Escalation pattern
 
 ```text

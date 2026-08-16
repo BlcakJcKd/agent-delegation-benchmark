@@ -7,17 +7,29 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from delegation.config import default_config, load_config, parse_config, save_config, set_enabled
-from delegation.routing import MODELS, PROVIDERS
+from delegation.routing import EXPERIMENTAL_PAYG_NAMES, MODELS, PROVIDERS
 
 
 class DefaultConfigTests(unittest.TestCase):
-    def test_default_config_has_every_provider_and_model_enabled(self):
+    def test_default_config_has_every_stable_provider_and_model_enabled(self):
         config = default_config()
         self.assertEqual(set(config["providers"]), set(PROVIDERS))
         self.assertEqual(set(config["models"]), set(MODELS))
-        for entry in {**config["providers"], **config["models"]}.values():
+        for name, entry in {**config["providers"], **config["models"]}.items():
+            if name in EXPERIMENTAL_PAYG_NAMES:
+                continue
             self.assertTrue(entry["enabled"])
             self.assertNotIn("reason", entry)
+
+    def test_default_config_has_experimental_payg_entries_disabled_with_a_reason(self):
+        config = default_config()
+        for section, name in (
+            ("providers", "deepseek"), ("providers", "minimax"),
+            ("models", "deepseek-pro"), ("models", "deepseek-flash"), ("models", "minimax-m3"),
+        ):
+            entry = config[section][name]
+            self.assertFalse(entry["enabled"], f"{section}.{name} must default to disabled")
+            self.assertEqual(entry["reason"], "experimental PAYG; benchmark pending")
 
 
 class LoadConfigTests(unittest.TestCase):
@@ -59,6 +71,39 @@ class LoadConfigTests(unittest.TestCase):
         self.assertFalse(config["providers"]["codex"]["enabled"])
         self.assertTrue(config["providers"]["claude"]["enabled"])
         self.assertTrue(config["providers"]["gemini"]["enabled"])
+
+    def test_pre_existing_config_migrates_payg_entries_to_disabled_without_touching_the_rest(self):
+        # A config written before deepseek/minimax existed (the real schema
+        # this project's own installed config currently has): loading it
+        # must not silently enable the new PAYG providers/routes, and must
+        # leave every pre-existing entry exactly as recorded.
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            path.write_text(
+                "[providers.claude]\nenabled = true\n"
+                "[providers.codex]\nenabled = true\n"
+                "[providers.gemini]\nenabled = true\n"
+                "[models.flash]\nenabled = true\n"
+                "[models.haiku]\nenabled = true\n"
+                "[models.luna]\nenabled = true\n"
+                "[models.sonnet]\nenabled = true\n"
+                "[models.terra]\nenabled = true\n"
+            )
+            config = load_config(path)
+            for section, name in (
+                ("providers", "claude"), ("providers", "codex"), ("providers", "gemini"),
+                ("models", "flash"), ("models", "haiku"), ("models", "luna"),
+                ("models", "sonnet"), ("models", "terra"),
+            ):
+                self.assertEqual(config[section][name], {"enabled": True})
+            self.assertFalse(config["providers"]["deepseek"]["enabled"])
+            self.assertFalse(config["providers"]["minimax"]["enabled"])
+            self.assertFalse(config["models"]["deepseek-pro"]["enabled"])
+            self.assertFalse(config["models"]["deepseek-flash"]["enabled"])
+            self.assertFalse(config["models"]["minimax-m3"]["enabled"])
+            # The migration is in-memory only; the file on disk is untouched
+            # unless something explicitly calls save_config.
+            self.assertNotIn("deepseek", path.read_text())
 
 
 class SaveConfigTests(unittest.TestCase):

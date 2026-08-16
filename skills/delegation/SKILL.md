@@ -86,6 +86,31 @@ ask-haiku  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --p
 ask-sonnet --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ```
 
+## Optional experimental PAYG delegates
+
+`ask-deepseek-pro`, `ask-deepseek-flash`, and `ask-minimax-m3` exist as the
+same kind of read-only consultation wrapper, routed through independently
+verified Codex provider-profile launchers (`codex-deepseek`/`codex-minimax`)
+rather than OpenAI's own Codex inference — see
+[docs/PAYG_DELEGATES.md](../../docs/PAYG_DELEGATES.md) for the transport
+distinction. They are **experimental PAYG routes, benchmark pending**: not
+yet evaluated through this project's benchmark harness, and not assigned any
+task-specific role. Do not treat them as superior or inferior to
+Flash/Haiku/Sonnet from this text — there is no evidence yet either way.
+
+They default to **disabled** on every install; a disabled route in
+`delegate-status` means exactly that — do not route around it by invoking
+the wrapper directly, and do not ask the user to enable one merely to try
+it out. Only use one if `delegate-status --primary <your-identity>` already
+reports it `available` (the user explicitly enabled it via `delegate-config`
+or `delegate-config enable deepseek-pro`/`deepseek-flash`/`minimax-m3`).
+Because each call draws down a metered balance, treat one as a deliberate,
+non-default choice, not a first reach — and remember these routes reach
+DeepSeek/MiniMax inference specifically, not Codex's own OpenAI models, even
+though the transport is `codex exec`; the self-provider guard below already
+accounts for this and will reject/allow correctly regardless of which CLI
+you are.
+
 Give the delegate the minimum necessary scope:
 
 1. A dedicated directory with only files safe to disclose — no credentials,

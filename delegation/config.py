@@ -23,16 +23,35 @@ from pathlib import Path
 from typing import Any
 
 from .paths import config_path
-from .routing import MODELS, PROVIDERS
+from .routing import DEFAULT_DISABLED_REASON, EXPERIMENTAL_PAYG_NAMES, MODELS, PROVIDERS
 
 _SECTIONS = {"providers": PROVIDERS, "models": MODELS}
 _ALLOWED_ENTRY_KEYS = {"enabled", "reason"}
 
 
+def _default_entry(name: str) -> dict[str, Any]:
+    """The default entry for a name absent from a config file.
+
+    Stable providers/routes default to enabled. Experimental PAYG
+    providers/routes (``routing.EXPERIMENTAL_PAYG_NAMES``) default to
+    disabled with a standard reason -- both for a fresh install and when
+    merging into an existing config that predates them, so a PAYG route
+    never becomes eligible merely because a user's config file is older
+    than it. Enabling one is always an explicit `delegate-config` action.
+    """
+    if name in EXPERIMENTAL_PAYG_NAMES:
+        return {"enabled": False, "reason": DEFAULT_DISABLED_REASON}
+    return {"enabled": True}
+
+
 def default_config() -> dict[str, dict[str, dict[str, Any]]]:
-    """The config used when no config file exists yet: everything enabled."""
+    """The config used when no config file exists yet.
+
+    Everything is enabled except experimental PAYG providers/routes, which
+    default to disabled -- see ``_default_entry``.
+    """
     return {
-        section: {name: {"enabled": True} for name in names}
+        section: {name: _default_entry(name) for name in names}
         for section, names in _SECTIONS.items()
     }
 
@@ -72,7 +91,7 @@ def parse_config(raw: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
             raise ValueError(f"unknown {section[:-1]}(s) in config: {sorted(unknown)}")
         result[section] = {
             name: _validate_entry(section, name, section_raw[name]) if name in section_raw
-            else {"enabled": True}
+            else _default_entry(name)
             for name in names
         }
     return result

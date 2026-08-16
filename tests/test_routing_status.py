@@ -29,6 +29,16 @@ class NormalizePrimaryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown --primary value"):
             normalize_primary("bogus")
 
+    def test_deepseek_and_minimax_transport_aliases_normalize_to_their_provider(self):
+        # A primary's TRANSPORT (which CLI hosts it) is irrelevant to the
+        # guard; only its inference PROVIDER matters, so every alias that
+        # means "this primary's own inference is DeepSeek/MiniMax" must
+        # normalize to that provider regardless of which CLI fronts it.
+        for alias in ("deepseek", "claude-deepseek", "codex-deepseek"):
+            self.assertEqual(normalize_primary(alias), "deepseek")
+        for alias in ("minimax", "claude-minimax", "codex-minimax"):
+            self.assertEqual(normalize_primary(alias), "minimax")
+
 
 class RouteTypeTests(unittest.TestCase):
     def test_terra_and_luna_are_always_native_only(self):
@@ -52,6 +62,25 @@ class RouteTypeTests(unittest.TestCase):
         self.assertEqual(route_type("flash", "manual"), "external")
         self.assertEqual(route_type("haiku", "manual"), "external")
 
+    def test_codex_and_claude_primaries_may_externally_reach_deepseek_and_minimax(self):
+        # Same-provider protection is keyed on the INFERENCE PROVIDER, not
+        # the transport executable: a Codex- or Claude-hosted primary is a
+        # different provider than deepseek/minimax, so these are external.
+        for primary in ("codex", "claude"):
+            self.assertEqual(route_type("deepseek-pro", primary), "external")
+            self.assertEqual(route_type("deepseek-flash", primary), "external")
+            self.assertEqual(route_type("minimax-m3", primary), "external")
+
+    def test_deepseek_primary_calling_a_deepseek_route_is_same_provider(self):
+        self.assertEqual(route_type("deepseek-pro", "deepseek"), "same-provider")
+        self.assertEqual(route_type("deepseek-flash", "deepseek"), "same-provider")
+        # A DeepSeek primary is a different provider than minimax/claude/codex.
+        self.assertEqual(route_type("minimax-m3", "deepseek"), "external")
+
+    def test_minimax_primary_calling_the_minimax_route_is_same_provider(self):
+        self.assertEqual(route_type("minimax-m3", "minimax"), "same-provider")
+        self.assertEqual(route_type("deepseek-pro", "minimax"), "external")
+
 
 class ComputeStatusTests(unittest.TestCase):
     def _which_all_present(self, name):
@@ -68,7 +97,10 @@ class ComputeStatusTests(unittest.TestCase):
             return f"/usr/bin/{name}"
 
         compute_status(default_config(), primary="claude-code", which=spy_which)
-        self.assertEqual(set(calls), {"claude", "agy"})  # only wrapper executables probed
+        # only wrapper executables probed -- every route with an external
+        # wrapper, enabled or not, since "enabled" is a separate axis from
+        # "is the wrapper on this machine".
+        self.assertEqual(set(calls), {"claude", "agy", "codex-deepseek", "codex-minimax"})
 
     def test_enabled_external_route_with_executable_present_is_available(self):
         results = {r.route: r for r in compute_status(default_config(), primary=None, which=self._which_all_present)}
@@ -126,6 +158,51 @@ class ComputeStatusTests(unittest.TestCase):
     def test_unknown_primary_propagates_from_compute_status(self):
         with self.assertRaises(ValueError):
             compute_status(default_config(), primary="not-a-real-provider")
+
+    def test_payg_routes_are_disabled_by_default_even_with_executable_present(self):
+        results = {r.route: r for r in compute_status(default_config(), primary=None, which=self._which_all_present)}
+        for route in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+            self.assertEqual(results[route].effective, "disabled")
+            self.assertEqual(results[route].effective_reason, "experimental PAYG; benchmark pending")
+
+    def test_payg_route_metadata_is_reported(self):
+        results = {r.route: r for r in compute_status(default_config(), primary=None, which=self._which_all_present)}
+        for route in ("deepseek-pro", "deepseek-flash"):
+            self.assertEqual(results[route].provider, "deepseek")
+            self.assertEqual(results[route].transport, "codex")
+            self.assertEqual(results[route].billing, "payg")
+            self.assertEqual(results[route].maturity, "experimental")
+        minimax = results["minimax-m3"]
+        self.assertEqual(minimax.provider, "minimax")
+        self.assertEqual(minimax.transport, "codex")
+        self.assertEqual(minimax.billing, "payg")
+        self.assertEqual(minimax.maturity, "experimental")
+
+    def test_stable_route_metadata_is_reported_as_quota_and_stable(self):
+        results = {r.route: r for r in compute_status(default_config(), primary=None, which=self._which_all_present)}
+        for route in ("terra", "luna", "sonnet", "haiku", "flash"):
+            self.assertEqual(results[route].billing, "quota")
+            self.assertEqual(results[route].maturity, "stable")
+
+    def test_deepseek_primary_makes_deepseek_routes_native_only_once_enabled(self):
+        config = set_enabled(default_config(), "providers", "deepseek", True)
+        config = set_enabled(config, "models", "deepseek-pro", True)
+        results = {r.route: r for r in compute_status(config, primary="deepseek", which=self._which_all_present)}
+        self.assertEqual(results["deepseek-pro"].effective, "native-only")
+        self.assertEqual(results["deepseek-pro"].route_type, "same-provider")
+
+    def test_minimax_primary_makes_minimax_route_native_only_once_enabled(self):
+        config = set_enabled(default_config(), "providers", "minimax", True)
+        config = set_enabled(config, "models", "minimax-m3", True)
+        results = {r.route: r for r in compute_status(config, primary="minimax", which=self._which_all_present)}
+        self.assertEqual(results["minimax-m3"].effective, "native-only")
+        self.assertEqual(results["minimax-m3"].route_type, "same-provider")
+
+    def test_enabling_deepseek_with_codex_primary_makes_it_available(self):
+        config = set_enabled(default_config(), "providers", "deepseek", True)
+        config = set_enabled(config, "models", "deepseek-pro", True)
+        results = {r.route: r for r in compute_status(config, primary="codex", which=self._which_all_present)}
+        self.assertEqual(results["deepseek-pro"].effective, "available")
 
 
 if __name__ == "__main__":

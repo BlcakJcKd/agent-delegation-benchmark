@@ -24,10 +24,14 @@ from typing import Any
 from . import routing
 from .config import load_config, save_config
 
-PROVIDER_ORDER: tuple[str, ...] = ("gemini", "claude", "codex")
-PROVIDER_LABELS: dict[str, str] = {"gemini": "Gemini", "claude": "Claude", "codex": "Codex"}
+PROVIDER_ORDER: tuple[str, ...] = ("gemini", "claude", "codex", "deepseek", "minimax")
+PROVIDER_LABELS: dict[str, str] = {
+    "gemini": "Gemini", "claude": "Claude", "codex": "Codex",
+    "deepseek": "DeepSeek", "minimax": "MiniMax",
+}
 MODEL_LABELS: dict[str, str] = {
     "flash": "Flash", "sonnet": "Sonnet", "haiku": "Haiku", "terra": "Terra", "luna": "Luna",
+    "deepseek-pro": "V4 Pro", "deepseek-flash": "V4 Flash", "minimax-m3": "M3",
 }
 
 
@@ -109,7 +113,11 @@ def _render(stdscr, rows: list[Row], cursor: int) -> None:
         indent = "    " if row.kind == "model" else ""
         box = "[x]" if row.enabled else "[ ]"
         reason = f"   {row.reason}" if (row.reason and row.kind == "provider") else ""
-        line = f"{indent}{box} {row.label}{reason}"
+        name = row.name if row.kind == "provider" else row.provider
+        # PAYG providers/routes are visually tagged so they're never
+        # mistaken for the existing subscription/quota-based ones.
+        badge = "   PAYG · experimental" if routing.PROVIDER_BILLING.get(name) == "payg" else ""
+        line = f"{indent}{box} {row.label}{badge}{reason}"
         attr = curses.A_REVERSE if i == cursor else curses.A_NORMAL
         try:
             stdscr.addstr(y, 0, line[: max(1, width - 1)], attr)

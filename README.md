@@ -32,6 +32,12 @@ installed runtime is truly independent of this checkout, see
 first — a naive test method can lock an agent out of its own working
 directory.
 
+`ask-deepseek-pro`/`ask-deepseek-flash`/`ask-minimax-m3` add three
+experimental, pay-as-you-go (PAYG) routes on top of the same runtime,
+disabled by default on every install — see
+[docs/PAYG_DELEGATES.md](docs/PAYG_DELEGATES.md) for the provider/transport
+distinction, credential handling, and how to opt in.
+
 ## Method
 
 Each of the six tasks has a fixed prompt in `tasks/prompts/` and starting files in `fixtures/`.

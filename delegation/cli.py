@@ -72,5 +72,17 @@ def ask_sonnet_main() -> int:
     return main(fixed_delegate="sonnet")
 
 
+def ask_deepseek_pro_main() -> int:
+    return main(fixed_delegate="deepseek-pro")
+
+
+def ask_deepseek_flash_main() -> int:
+    return main(fixed_delegate="deepseek-flash")
+
+
+def ask_minimax_m3_main() -> int:
+    return main(fixed_delegate="minimax-m3")
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

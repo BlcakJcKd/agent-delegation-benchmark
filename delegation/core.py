@@ -54,6 +54,17 @@ DELEGATES: dict[str, DelegateSpec] = {
     "flash": DelegateSpec("flash", "agy", "gemini-3.7-flash-medium", "medium"),
     "haiku": DelegateSpec("haiku", "claude", "claude-haiku-4-5-20251001", "medium"),
     "sonnet": DelegateSpec("sonnet", "claude", "claude-sonnet-5", "medium"),
+    # Experimental PAYG routes (see docs/PAYG_DELEGATES.md). Transport is the
+    # `codex-deepseek`/`codex-minimax` launchers -- independently verified,
+    # pre-existing Codex provider-profile wrappers that pin `--profile
+    # deepseek`/`--profile minimax` and resolve their API key from the login
+    # keyring; this package never handles that key. Effort is pinned to
+    # "high" for both: DeepSeek's own catalog exposes low/high/max (no
+    # "medium"), and MiniMax's profile is already pinned to "high" locally
+    # -- neither is an invented flag.
+    "deepseek-pro": DelegateSpec("deepseek-pro", "codex-deepseek", "deepseek-v4-pro", "high"),
+    "deepseek-flash": DelegateSpec("deepseek-flash", "codex-deepseek", "deepseek-v4-flash", "high"),
+    "minimax-m3": DelegateSpec("minimax-m3", "codex-minimax", "MiniMax-M3", "high"),
 }
 
 
@@ -96,6 +107,19 @@ def build_argv(spec: DelegateSpec, workspace: Path, task: str) -> list[str]:
             "agy", "--output-format", "json", "--mode", "plan", "--sandbox",
             "--model", spec.model, "--effort", spec.effort or "medium",
             "-p", prompt,
+        ]
+    if spec.executable in {"codex-deepseek", "codex-minimax"}:
+        # These launchers already bake in `--profile deepseek`/`--profile
+        # minimax` and keyring credential retrieval (see
+        # docs/PAYG_DELEGATES.md); this argv only adds the same read-only,
+        # non-interactive, structured-output shape as the reference `codex`
+        # case below, plus an explicit model/effort pin so the route is
+        # never left to the profile's own default.
+        return [
+            spec.executable, "exec", "--ephemeral", "--skip-git-repo-check",
+            "--sandbox", "read-only", "--cd", str(workspace), "--json",
+            "--model", spec.model, "--config", f'model_reasoning_effort="{spec.effort or "high"}"',
+            prompt,
         ]
     if spec.name == "codex":
         return [

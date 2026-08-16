@@ -55,6 +55,33 @@ class BuildReportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_report("not-a-real-primary", which=_which_all_present, config=default_config())
 
+    def test_deepseek_and_minimax_routes_report_disabled_by_default(self):
+        report = build_report("claude-code", which=_which_all_present, config=default_config())
+        by_route = {r["route"]: r for r in report["routes"]}
+        for route in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+            self.assertEqual(by_route[route]["effective"], "disabled")
+            self.assertEqual(by_route[route]["billing"], "payg")
+            self.assertEqual(by_route[route]["maturity"], "experimental")
+
+    def test_codex_primary_shows_deepseek_and_minimax_as_available_once_enabled(self):
+        config = set_enabled(default_config(), "providers", "deepseek", True)
+        config = set_enabled(config, "providers", "minimax", True)
+        config = set_enabled(config, "models", "deepseek-pro", True)
+        config = set_enabled(config, "models", "deepseek-flash", True)
+        config = set_enabled(config, "models", "minimax-m3", True)
+        report = build_report("codex", which=_which_all_present, config=config)
+        by_route = {r["route"]: r for r in report["routes"]}
+        for route in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+            self.assertEqual(by_route[route]["effective"], "available")
+
+    def test_deepseek_primary_shows_deepseek_routes_native_only(self):
+        config = set_enabled(default_config(), "providers", "deepseek", True)
+        config = set_enabled(config, "models", "deepseek-pro", True)
+        report = build_report("deepseek", which=_which_all_present, config=config)
+        by_route = {r["route"]: r for r in report["routes"]}
+        self.assertEqual(by_route["deepseek-pro"]["effective"], "native-only")
+        self.assertEqual(by_route["deepseek-pro"]["route_type"], "same-provider")
+
 
 class MainCliTests(unittest.TestCase):
     def test_json_flag_emits_valid_json_with_routes(self):
@@ -64,7 +91,7 @@ class MainCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         payload = json.loads(buf.getvalue())
         self.assertEqual(payload["declared_primary"], "codex")
-        self.assertEqual(len(payload["routes"]), 5)
+        self.assertEqual(len(payload["routes"]), 8)
 
     def test_human_output_mentions_every_route(self):
         buf = io.StringIO()
@@ -72,8 +99,22 @@ class MainCliTests(unittest.TestCase):
             code = main(["--primary", "manual"])
         self.assertEqual(code, 0)
         out = buf.getvalue()
-        for route in ("terra", "luna", "sonnet", "haiku", "flash"):
+        for route in (
+            "terra", "luna", "sonnet", "haiku", "flash",
+            "deepseek-pro", "deepseek-flash", "minimax-m3",
+        ):
             self.assertIn(route, out)
+
+    def test_human_output_distinguishes_payg_experimental_routes(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = main(["--primary", "manual"])
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        self.assertIn("payg", out)
+        self.assertIn("experimental", out)
+        self.assertIn("quota", out)
+        self.assertIn("stable", out)
 
     def test_unknown_primary_exits_nonzero_with_a_clear_message(self):
         buf = io.StringIO()

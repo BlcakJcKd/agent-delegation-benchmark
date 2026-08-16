@@ -12,6 +12,9 @@ agent-delegation-benchmark repository        (source / development / evidence)
     |
     +--> installed user-level Python runtime  (pipx venv, self-contained)
     |        provides: ask-flash, ask-haiku, ask-sonnet,
+    |                   ask-deepseek-pro, ask-deepseek-flash, ask-minimax-m3
+    |                   (experimental PAYG, disabled by default -- see
+    |                   PAYG_DELEGATES.md),
     |                   delegate-status, delegate-config
     |
     +--> user config                          ($XDG_CONFIG_HOME/agent-delegation/config.toml)
@@ -41,10 +44,11 @@ scripts/install-user-delegation.sh
 
 This: runs the test suite and the no-model delegation preflight; installs
 the package with `pipx install --force` (no sudo, no venv activation to
-remember — pipx manages its own isolated venv and puts the five commands on
-your `PATH`); creates a default config only if one doesn't already exist;
-and installs/refreshes the skill. It makes no provider-authentication
-changes and no model calls.
+remember — pipx manages its own isolated venv and puts all eight commands on
+your `PATH`); creates a default config only if one doesn't already exist
+(the three experimental PAYG routes come out disabled either way — see
+[PAYG_DELEGATES.md](PAYG_DELEGATES.md)); and installs/refreshes the skill.
+It makes no provider-authentication changes and no model calls.
 
 If a command reports `NOT ON PATH` at the end, run `pipx ensurepath` and
 open a new shell.

@@ -77,14 +77,18 @@ def _print_human(report: dict[str, Any]) -> None:
     print(f"Primary: {report['declared_primary']}")
     print(f"Quota:   {report['quota']}")
     print()
-    header = f"{'Route':<8} {'Provider':<8} {'Config':<10} {'Route type':<14} {'Effective':<18} Reason"
+    header = (
+        f"{'Route':<15} {'Provider':<9} {'Transport':<10} {'Billing':<8} {'Maturity':<13} "
+        f"{'Config':<10} {'Route type':<14} {'Effective':<18} Reason"
+    )
     print(header)
     print("-" * len(header))
     for route in report["routes"]:
         config_state = "enabled" if route["configured_enabled"] else "disabled"
         reason = route["effective_reason"] or route["configured_reason"] or ""
         print(
-            f"{route['route']:<8} {route['provider']:<8} {config_state:<10} "
+            f"{route['route']:<15} {route['provider']:<9} {route['transport']:<10} "
+            f"{route['billing']:<8} {route['maturity']:<13} {config_state:<10} "
             f"{route['route_type']:<14} {route['effective']:<18} {reason}"
         )
 

@@ -20,6 +20,9 @@ from . import routing
 class RouteStatus:
     route: str
     provider: str
+    transport: str  # the CLI frontend that executes the call; may differ from `provider`
+    billing: str  # "quota" | "payg" -- display only, never a routing input
+    maturity: str  # "stable" | "experimental" -- display only, never a routing input
     configured_enabled: bool
     configured_reason: str | None
     route_type: str  # "external" | "same-provider" | "native-only"
@@ -32,6 +35,9 @@ class RouteStatus:
         return {
             "route": self.route,
             "provider": self.provider,
+            "transport": self.transport,
+            "billing": self.billing,
+            "maturity": self.maturity,
             "configured_enabled": self.configured_enabled,
             "configured_reason": self.configured_reason,
             "route_type": self.route_type,
@@ -87,9 +93,10 @@ def compute_status(
             effective, effective_reason = "available", None
 
         results.append(RouteStatus(
-            route=route, provider=provider, configured_enabled=enabled,
-            configured_reason=reason, route_type=rtype, effective=effective,
-            effective_reason=effective_reason, executable=executable,
+            route=route, provider=provider, transport=routing.ROUTE_TRANSPORT[route],
+            billing=routing.ROUTE_BILLING[route], maturity=routing.ROUTE_MATURITY[route],
+            configured_enabled=enabled, configured_reason=reason, route_type=rtype,
+            effective=effective, effective_reason=effective_reason, executable=executable,
             executable_available=executable_available,
         ))
     return results

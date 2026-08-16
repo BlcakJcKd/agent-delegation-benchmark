@@ -15,6 +15,19 @@ REQUIRED_HELP: dict[str, tuple[str, ...]] = {
     "flash": ("--mode", "plan", "--sandbox", "--model", "--effort", "--print"),
     "haiku": ("--permission-mode", "plan", "--tools", "--allowedTools", "--safe-mode", "--effort", "--print"),
     "sonnet": ("--permission-mode", "plan", "--tools", "--allowedTools", "--safe-mode", "--effort", "--print"),
+    "deepseek-pro": ("--sandbox", "read-only", "--model", "--json", "--ephemeral", "--cd"),
+    "deepseek-flash": ("--sandbox", "read-only", "--model", "--json", "--ephemeral", "--cd"),
+    "minimax-m3": ("--sandbox", "read-only", "--model", "--json", "--ephemeral", "--cd"),
+}
+
+# Non-default subcommand a delegate's executable needs before `--help` shows
+# the relevant flags. The codex-transport delegates document their
+# read-only/sandbox/model flags under `exec --help`, not the top-level
+# `--help`; every other delegate's wrapper CLI documents them at top level.
+HELP_ARGS: dict[str, tuple[str, ...]] = {
+    "deepseek-pro": ("exec", "--help"),
+    "deepseek-flash": ("exec", "--help"),
+    "minimax-m3": ("exec", "--help"),
 }
 
 
@@ -34,7 +47,7 @@ def check(delegates: list[str] | None = None) -> dict[str, object]:
             continue
         code, version = _capture([spec.executable, "--version"])
         checks.append({"name": name + ": version", "ok": code == 0, "detail": version.strip()})
-        code, help_text = _capture([spec.executable, "--help"])
+        code, help_text = _capture([spec.executable, *HELP_ARGS.get(name, ("--help",))])
         missing = [value for value in REQUIRED_HELP[name] if value not in help_text]
         checks.append({"name": name + ": supported read-only flags", "ok": code == 0 and not missing, "detail": "OK" if not missing else "missing: " + ", ".join(missing)})
         command = build_argv(spec, Path("<WORKSPACE>"), "<PROMPT>")
