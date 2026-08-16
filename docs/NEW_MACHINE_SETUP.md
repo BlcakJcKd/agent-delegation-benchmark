@@ -178,6 +178,50 @@ project hit exactly that inside a Claude Code session; see
 is not specific to DeepSeek/MiniMax. Retry from an ordinary terminal/SSH
 session rather than a nested agent sandbox.
 
+### AppArmor-restricted unprivileged user namespaces (Ubuntu)
+
+A second, distinct failure mode of the same `bwrap` smoke test shows up on
+Ubuntu releases that ship
+`kernel.apparmor_restrict_unprivileged_userns = 1` (check with `sysctl
+kernel.apparmor_restrict_unprivileged_userns`). Under that sysctl,
+unconfined bubblewrap invocations get folded into AppArmor's generic
+`unprivileged_userns` profile and can be denied capabilities `bwrap` needs,
+such as `CAP_NET_ADMIN` — the symptom looks the same as the nested-sandbox
+failure above (a `bwrap` namespace/network error), so **detect which one
+you actually have before changing anything**:
+
+```bash
+sysctl kernel.apparmor_restrict_unprivileged_userns
+aa-status 2>/dev/null | grep -i bwrap   # already loaded on some machines
+sudo journalctl -k --since "-10min" | grep -i apparmor   # look for DENIED entries
+```
+
+If `aa-status` already lists an application-specific `bwrap` profile, this
+machine likely already has the fix below applied — don't reapply it
+blindly, and don't assume every machine needs the same steps as this one
+did.
+
+The fix confirmed to work on this project's machine was to enable Ubuntu's
+own packaged, application-specific profile (scoped to `bwrap`, not a
+blanket userns policy change) rather than loosen the sysctl:
+
+```bash
+sudo ln -s /usr/share/apparmor/extra-profiles/bwrap-userns-restrict \
+  /etc/apparmor.d/bwrap-userns-restrict
+sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+```
+
+Then re-run the smoke test above and confirm no fresh `DENIED` entries
+appear in `journalctl -k` for the test's timeframe.
+
+Do **not** work around this by setting
+`kernel.apparmor_restrict_unprivileged_userns = 0` globally, and do not
+make `bwrap` setuid-root — both remove a real hardening boundary
+system-wide for every unprivileged-userns user on the machine, not just
+this project's sandbox use. The packaged `bwrap-userns-restrict` profile
+grants `bwrap` only what it needs while leaving the restriction in place
+for everything else.
+
 ## 12. Optional tiny read-only smoke call
 
 Only after step 11 succeeds, and only if you want to confirm a route
