@@ -4,6 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-delegation-benchmark"
-version = "0.1.0"
+version = "0.2.0"
 description = "Small reproducible benchmark for CLI coding agents"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
+
+[project.scripts]
+ask-flash = "delegation.cli:ask_flash_main"
+ask-haiku = "delegation.cli:ask_haiku_main"
+ask-sonnet = "delegation.cli:ask_sonnet_main"
+delegate-status = "delegation.status_cli:main"
+delegate-config = "delegation.config_cli:main"
+
+[tool.setuptools]
+packages = ["delegation"]

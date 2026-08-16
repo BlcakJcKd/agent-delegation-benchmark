@@ -33,6 +33,13 @@ Gemini 3.1 Pro Low is an historical comparator, not the operational default.
 Flash is the preferred Antigravity configuration unless new, versioned evidence
 changes that conclusion.
 
+This table describes what's *evidence-guided*, not what's currently
+*eligible* on a given machine. A route can be persistently disabled by the
+user (e.g. quota exhausted) independent of this guidance — check
+`delegate-status` before delegating; see
+[DELEGATE_CONFIGURATION.md](DELEGATE_CONFIGURATION.md) for the config that
+governs it and who's allowed to change it.
+
 ## Escalation pattern
 
 ```text
@@ -59,27 +66,45 @@ actual files.
 
 ## Operational wrappers
 
-`bin/ask-flash`, `bin/ask-haiku`, and `bin/ask-sonnet` invoke
-`python -m delegation.cli`. They implement consultation only. They require a
-dedicated workspace containing `.delegation-scope.json` with:
+Two equivalent interfaces invoke the same `delegation` package: the
+development wrappers `bin/ask-flash`, `bin/ask-haiku`, `bin/ask-sonnet`
+(`python -m delegation.cli <name>`, working directly from a checkout), and
+the installed, cross-project commands `ask-flash`/`ask-haiku`/`ask-sonnet`
+produced by `scripts/install-user-delegation.sh` (see
+[USER_INSTALLATION.md](USER_INSTALLATION.md)). Both implement consultation
+only. Both require a dedicated workspace containing `.delegation-scope.json`
+with:
 
 ```json
 {"mode": "read-only"}
 ```
 
-The marker is an explicit operator assertion, not a security boundary. Prepare
-that directory with only the files safe to disclose and no symlinks. Logs are written under
-`delegate_runs/` in this repository (or `--log-root`), not inside the consulted
-workspace. Each log contains the prompt, stdout, stderr, exit code, elapsed
-time, requested model/effort, cwd, and a redacted argv; it never serializes the
-environment.
+The marker is an explicit operator assertion, not a security boundary.
+Prepare that directory with only the files safe to disclose and no symlinks.
+Logs are written under the XDG state directory
+(`$XDG_STATE_HOME/agent-delegation/delegate_runs/`, falling back to
+`~/.local/state/agent-delegation/delegate_runs/`; override with
+`--log-root`), never inside the consulted workspace and never inside this
+repository by default. Each log contains the prompt, stdout, stderr, exit
+code, elapsed time, requested model/effort, cwd, declared caller/primary,
+and a redacted argv; it never serializes the environment.
 
 Example (do not run against a real project without checking the scope):
 
 ```bash
-bin/ask-flash --workspace /absolute/scoped-copy \
-  --prompt-file /absolute/consultation-task.md --timeout 300
+ask-flash --workspace /absolute/scoped-copy \
+  --prompt-file /absolute/consultation-task.md --timeout 300 \
+  --primary claude-code
 ```
+
+`--primary` is optional but enables the self-provider guard: a wrapper
+rejects being invoked for its own declared primary's provider (e.g. Claude
+primary calling `ask-haiku`/`ask-sonnet`) before launching anything, since
+same-provider work should go through that host's native agent capability
+instead. This is distinct from the recursion-depth guard below — see
+[CLAUDE_CODE_ORCHESTRATION.md](CLAUDE_CODE_ORCHESTRATION.md) for the
+difference. Run `delegate-status --primary <identity>` first to see the
+effective landscape without making any model call.
 
 Before a real consultation, run the local, no-model wrapper validation:
 

@@ -1,0 +1,93 @@
+"""Tests for delegate-status. Config and executable lookup are always
+injected, so nothing here touches the real filesystem/PATH or a model."""
+
+from __future__ import annotations
+
+import io
+import json
+import unittest
+from contextlib import redirect_stdout
+
+from delegation.config import default_config, set_enabled
+from delegation.status_cli import build_report, main
+
+
+def _which_all_present(name):
+    return f"/usr/bin/{name}"
+
+
+class BuildReportTests(unittest.TestCase):
+    def test_report_has_no_undeclared_primary_by_default(self):
+        report = build_report(None, which=_which_all_present, config=default_config())
+        self.assertEqual(report["declared_primary"], "not-declared")
+
+    def test_quota_is_reported_as_user_managed_never_a_percentage(self):
+        report = build_report(None, which=_which_all_present, config=default_config())
+        self.assertEqual(report["quota"], "user-managed / unknown")
+
+    def test_report_includes_config_and_state_paths(self):
+        report = build_report(None, which=_which_all_present, config=default_config())
+        self.assertIn("config.toml", report["config_path"])
+        self.assertIn("delegate_runs", report["state_log_path"])
+
+    def test_report_for_each_primary_alias(self):
+        for primary, expected in (
+            ("claude-code", "claude"), ("codex", "codex"), ("gemini", "gemini"), ("manual", "manual"),
+        ):
+            report = build_report(primary, which=_which_all_present, config=default_config())
+            self.assertEqual(report["declared_primary"], expected)
+
+    def test_claude_primary_shows_haiku_sonnet_as_native_only_flash_as_available(self):
+        report = build_report("claude-code", which=_which_all_present, config=default_config())
+        by_route = {r["route"]: r for r in report["routes"]}
+        self.assertEqual(by_route["haiku"]["effective"], "native-only")
+        self.assertEqual(by_route["sonnet"]["effective"], "native-only")
+        self.assertEqual(by_route["flash"]["effective"], "available")
+
+    def test_disabled_provider_reason_surfaces_in_report(self):
+        config = set_enabled(default_config(), "providers", "codex", False, reason="weekly quota low")
+        report = build_report(None, which=_which_all_present, config=config)
+        by_route = {r["route"]: r for r in report["routes"]}
+        self.assertEqual(by_route["terra"]["effective"], "disabled")
+        self.assertEqual(by_route["terra"]["effective_reason"], "weekly quota low")
+
+    def test_unknown_primary_raises(self):
+        with self.assertRaises(ValueError):
+            build_report("not-a-real-primary", which=_which_all_present, config=default_config())
+
+
+class MainCliTests(unittest.TestCase):
+    def test_json_flag_emits_valid_json_with_routes(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = main(["--primary", "codex", "--json"])
+        self.assertEqual(code, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(payload["declared_primary"], "codex")
+        self.assertEqual(len(payload["routes"]), 5)
+
+    def test_human_output_mentions_every_route(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = main(["--primary", "manual"])
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        for route in ("terra", "luna", "sonnet", "haiku", "flash"):
+            self.assertIn(route, out)
+
+    def test_unknown_primary_exits_nonzero_with_a_clear_message(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = main(["--primary", "not-a-real-primary"])
+        self.assertEqual(code, 2)
+        self.assertIn("unknown --primary value", buf.getvalue())
+
+    def test_no_primary_flag_is_valid_and_zero_model_calls(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = main([])
+        self.assertEqual(code, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

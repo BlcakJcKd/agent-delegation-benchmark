@@ -11,6 +11,23 @@ operational delegation layer is separate from immutable historical `runs/`; its
 read-only consultation policy and wrappers are in
 [docs/DELEGATION_POLICY.md](docs/DELEGATION_POLICY.md).
 
+## Delegation as a user-level tool
+
+This repository is also the source for an installable, cross-project
+delegation runtime: `ask-flash`/`ask-haiku`/`ask-sonnet` for read-only
+consultation, `delegate-status` for a zero-model-call view of what's
+currently eligible, and `delegate-config` to persistently enable/disable
+providers or routes. Once installed (`scripts/install-user-delegation.sh`),
+none of this depends on this checkout still existing — see
+[docs/USER_INSTALLATION.md](docs/USER_INSTALLATION.md) for the install
+procedure and architecture, and
+[docs/DELEGATE_CONFIGURATION.md](docs/DELEGATE_CONFIGURATION.md) for the
+config schema and ownership rules. Claude-Code-specific orchestration
+guidance is in
+[docs/CLAUDE_CODE_ORCHESTRATION.md](docs/CLAUDE_CODE_ORCHESTRATION.md), and
+a short entry point for any other agent is
+[docs/LLM_HANDOFF.md](docs/LLM_HANDOFF.md).
+
 ## Method
 
 Each of the six tasks has a fixed prompt in `tasks/prompts/` and starting files in `fixtures/`.

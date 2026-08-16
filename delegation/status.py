@@ -1,0 +1,95 @@
+"""Zero-model-call computation of the effective delegation landscape.
+
+Combines user config (``delegation.config``) with the fixed route/provider
+tables (``delegation.routing``) and, for routes with an external wrapper,
+whether that wrapper's executable is actually on PATH. Never invokes a
+delegate CLI, never queries quota -- quota availability is user-managed in
+this version (see docs/DELEGATE_CONFIGURATION.md).
+"""
+
+from __future__ import annotations
+
+import shutil
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from . import routing
+
+
+@dataclass(frozen=True)
+class RouteStatus:
+    route: str
+    provider: str
+    configured_enabled: bool
+    configured_reason: str | None
+    route_type: str  # "external" | "same-provider" | "native-only"
+    effective: str  # "available" | "native-only" | "disabled" | "executable missing"
+    effective_reason: str | None
+    executable: str | None  # the wrapper executable name, or None if not applicable
+    executable_available: bool | None  # None when the route has no external wrapper
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "route": self.route,
+            "provider": self.provider,
+            "configured_enabled": self.configured_enabled,
+            "configured_reason": self.configured_reason,
+            "route_type": self.route_type,
+            "effective": self.effective,
+            "effective_reason": self.effective_reason,
+            "executable": self.executable,
+            "executable_available": self.executable_available,
+        }
+
+
+def _configured(config: dict, route: str) -> tuple[bool, str | None]:
+    provider = routing.ROUTE_PROVIDER[route]
+    provider_entry = config["providers"].get(provider, {"enabled": True})
+    model_entry = config["models"].get(route, {"enabled": True})
+    if not provider_entry.get("enabled", True):
+        return False, provider_entry.get("reason")
+    if not model_entry.get("enabled", True):
+        return False, model_entry.get("reason")
+    return True, model_entry.get("reason") or provider_entry.get("reason")
+
+
+def compute_status(
+    config: dict,
+    primary: str | None = None,
+    which: Callable[[str], str | None] = shutil.which,
+) -> list[RouteStatus]:
+    """Compute the effective status of every route for a declared primary.
+
+    ``which`` is injectable so tests can simulate executable presence/absence
+    without touching real PATH lookups or invoking anything.
+    """
+    normalized_primary = routing.normalize_primary(primary)
+    results: list[RouteStatus] = []
+    for route in sorted(routing.MODELS, key=lambda r: (routing.ROUTE_PROVIDER[r], r)):
+        provider = routing.ROUTE_PROVIDER[route]
+        enabled, reason = _configured(config, route)
+        rtype = routing.route_type(route, normalized_primary)
+        executable = routing.ROUTE_EXECUTABLE[route]
+        executable_available = bool(which(executable)) if executable else None
+
+        if not enabled:
+            effective, effective_reason = "disabled", reason
+        elif rtype == "native-only":
+            effective, effective_reason = "native-only", "no external wrapper for this route"
+        elif rtype == "same-provider":
+            effective, effective_reason = (
+                "native-only",
+                f"primary is already {provider}; use native agent capability instead",
+            )
+        elif executable_available is False:
+            effective, effective_reason = "executable missing", f"{executable} not found on PATH"
+        else:
+            effective, effective_reason = "available", None
+
+        results.append(RouteStatus(
+            route=route, provider=provider, configured_enabled=enabled,
+            configured_reason=reason, route_type=rtype, effective=effective,
+            effective_reason=effective_reason, executable=executable,
+            executable_available=executable_available,
+        ))
+    return results

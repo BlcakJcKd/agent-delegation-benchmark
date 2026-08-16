@@ -1,8 +1,12 @@
 __pycache__/
 .pytest_cache/
 *.egg-info/
+build/
 runs/
 delegate_runs/
+
+# Claude Code local session/runtime state (not project source).
+.claude/
 
 # Administrator-only ground truth and blind-review identity maps.
 private_admin/

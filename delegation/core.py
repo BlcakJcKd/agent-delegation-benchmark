@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from . import routing
+from .paths import log_root as _xdg_log_root
 
 READ_ONLY_CLAUDE_TOOLS: tuple[str, ...] = ("Read", "Glob", "Grep")
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -106,7 +108,14 @@ def build_argv(spec: DelegateSpec, workspace: Path, task: str) -> list[str]:
 
 
 def default_log_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "delegate_runs"
+    """The XDG state directory's ``delegate_runs``, independent of ``__file__``.
+
+    This resolves the same way whether ``delegation`` is imported from a
+    source checkout or an installed site-packages copy, and never writes
+    into the source repository or an installed package directory. Pass
+    ``log_root=`` to override, e.g. for tests or a dev-time preference.
+    """
+    return _xdg_log_root()
 
 
 def _check_recursion_guard() -> None:
@@ -135,6 +144,30 @@ def _check_recursion_guard() -> None:
 
 def _resolve_caller(caller: str | None) -> str:
     return caller or os.environ.get(DELEGATION_CALLER_ENV) or DEFAULT_CALLER
+
+
+def _check_self_provider_guard(delegate_name: str, primary: str | None) -> str | None:
+    """Reject a delegate whose provider matches the declared primary's own.
+
+    Distinct from :func:`_check_recursion_guard`: the recursion guard stops
+    ``delegate -> wrapper -> another delegate`` using an inherited, hard-to-
+    forge environment marker. This guard stops ``primary -> external call to
+    its own provider`` using a caller-declared ``primary`` value -- it is a
+    routing/policy nudge, not a security boundary, and it is only enforced
+    when a primary is actually declared (fail-open on an absent value, since
+    it cannot otherwise be verified). Returns the normalized primary (or
+    ``None`` if undeclared) for the caller to record.
+    """
+    normalized = routing.normalize_primary(primary)
+    if normalized is None or normalized == "manual":
+        return normalized
+    if routing.ROUTE_PROVIDER.get(delegate_name) == normalized:
+        raise ValueError(
+            f"same-provider external delegation disabled: primary={normalized!r} cannot "
+            f"externally invoke its own provider via ask-{delegate_name}; use a native "
+            "agent/subagent capability instead"
+        )
+    return normalized
 
 
 def _validate_scope(workspace: Path) -> Path:
@@ -171,6 +204,7 @@ def run_consultation(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     log_root: Path | None = None,
     caller: str | None = None,
+    primary: str | None = None,
     run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[int, Path]:
     """Run exactly one read-only delegate and retain an auditable local record.
@@ -181,12 +215,17 @@ def run_consultation(
     wrapper cannot be recursively invoked from inside it.  Logs are outside
     ``workspace`` so the administrator's evidence collection does not modify
     the consulted project.  A timeout is represented as exit code 124.
+
+    ``primary``, if given, is checked by the self-provider guard (see
+    :func:`_check_self_provider_guard`) and recorded for audit; it is a
+    distinct mechanism from the recursion-depth guard above.
     """
     _check_recursion_guard()
     if delegate_name not in DELEGATES:
         raise ValueError(f"unknown delegate: {delegate_name}")
     if timeout_seconds <= 0:
         raise ValueError("timeout must be positive")
+    normalized_primary = _check_self_provider_guard(delegate_name, primary)
     resolved_caller = _resolve_caller(caller)
     workspace = _validate_scope(workspace)
     spec = DELEGATES[delegate_name]
@@ -228,6 +267,7 @@ def run_consultation(
         "delegate": spec.name,
         "mode": spec.mode,
         "caller": resolved_caller,
+        "declared_primary": normalized_primary or "not-declared",
         "requested_model": spec.model,
         "requested_effort": spec.effort,
         "workspace": str(workspace),
