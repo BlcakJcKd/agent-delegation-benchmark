@@ -1,0 +1,39 @@
+{
+  "methodology_version": "1.0.0",
+  "fixture_lock_sha256": "e1c2deb3d98d7bbd2b3e03456dd70d582966154265ea76829a25bb03dd73fe3c",
+  "historical_cli_versions": {
+    "codex": "codex-cli 0.147.0",
+    "claude": "2.1.233 (Claude Code)",
+    "agy": "1.1.13"
+  },
+  "task_versions": {
+    "research_python": "v1",
+    "diagnostic_plot": "v1",
+    "debug_package": "v1",
+    "repository_review": "v1-invalid-ground-truth-excluded",
+    "scientific_writing": "v1",
+    "pandoc_pdf": "v1"
+  },
+  "prompt_sha256": {
+    "research_python": "9d0c2190bf28e2ab57ba6f11d54ba729b7e5d0bdcc3e1c1ba95578845e244d4e",
+    "diagnostic_plot": "ae1aaaa72db08f09ab1bf17c96f389487260ce09339752ee7c854749a4389e86",
+    "debug_package": "203ca7418a4f685ae652eb503581a82987e7e5192b38f25b3e904d3e1d59cf49",
+    "repository_review": "5709213558f558bdffc05a3f80d98d481cca09366ba8dd71845e5a99e61e75e7",
+    "scientific_writing": "cfa1f4cd4f6ad3b9965678e40a63ce1fd2c9cbf081b53cd27652f04a4ec50f83",
+    "pandoc_pdf": "0012d6f2f0c7f5d8c40ecc7a94dc25395e54096858ab4db4374ec7ab51bd3baa"
+  },
+  "controlled_evidence": {
+    "tier_a": "runs/tier-a-controlled-001",
+    "tier_b_composite_report": "runs/tier-b-controlled-003/TIER_B_REPORT.md",
+    "flash_crossover_report": "runs/FLASH_CROSSOVER_REPORT.md"
+  },
+  "excluded_pilot_runs": [
+    "first-comparison",
+    "first-valid-comparison",
+    "first-valid-codex-repair",
+    "first-valid-codex-terra"
+  ],
+  "important_exclusions": {
+    "repository_review": "v1 hidden manifest/evaluator defect; exclude from substantive aggregate interpretation"
+  }
+}

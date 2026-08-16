@@ -1,0 +1,9 @@
+metric,value
+participants_analyzed,48
+intervention_mean,18.4
+control_mean,12.1
+mean_difference,6.3
+ci_lower,2.2
+ci_upper,10.4
+p_value,0.003
+followup_days,14

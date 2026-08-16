@@ -1,0 +1,26 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "fixtures/debug_package/calcpack/__init__.py": "7681fa3342fee1368e68527b92c31de8342b23624c739e5fa795b6d0a432f232",
+    "fixtures/debug_package/calcpack/numbers.py": "5007fd9bc375641dd31c4e80c7ae7a381b568e26eecd64d71155263d220802e7",
+    "fixtures/debug_package/calcpack/text.py": "f2bf36a945338dfa4e26e488e1af189939e81f9d9d1a316f492639d1c03b8c55",
+    "fixtures/debug_package/tests/test_numbers.py": "1309837bf1d5a13f8b7965910b9a0d64090cf7c791fa69752dcc85f2bcebc726",
+    "fixtures/diagnostic_plot/data/qc_metrics.csv": "d5854669e99e24f58557291a92897468ce2b223e260dcdbba6a3574ef0ddffe5",
+    "fixtures/pandoc_pdf/assets/calibration.svg": "94338b35bc08c03db2d9e59737fa3dfaae2c314c6d1c1f9a20d486bd45e15679",
+    "fixtures/pandoc_pdf/report.md": "d534d5ef505ed94482c8c18d8d4686ffda0745e55936a1dcf8867536278f4fbb",
+    "fixtures/repository_review/review_target/__init__.py": "0360fd6e93ac69a3b32637c888c3698b6e88fa1f14bd43d88a48a476f424eb84",
+    "fixtures/repository_review/review_target/account.py": "dd8e3b86b132bdc447f4d7ab96af53a28d51fb8fd182457c260705a076be3aa7",
+    "fixtures/repository_review/review_target/cache.py": "a0995d8f8bb41c7442b6d8d3ab014d5356f54d93dd9a810efe74b66d4df120f6",
+    "fixtures/repository_review/review_target/parsing.py": "2acb1ffabff0506b5c8b96db69b27203eef3d579db7ac8f5ffc8d1e84e82786e",
+    "fixtures/repository_review/tests/test_smoke.py": "70f80eb2ba83809eb9b8ba24d8cde5e8743a0da7e59fbaa35fb504410fc94bd5",
+    "fixtures/research_python/data/observations.csv": "bf8c0928ddbf1ea55971e3f38c121e734d9ae8ab4dceb74a5e3d3e6620ecf9cf",
+    "fixtures/scientific_writing/data/evidence.csv": "0bf73b231ab77d1d3b6dc4e9fce44fd36e172c9d561c68089397afc21d676dd0",
+    "fixtures/scientific_writing/study_context.md": "63a3dd455d0f39aacf050d737f3fcce07febfec367704b44cf1a4b2cd2807421",
+    "tasks/prompts/debug_package.md": "203ca7418a4f685ae652eb503581a82987e7e5192b38f25b3e904d3e1d59cf49",
+    "tasks/prompts/diagnostic_plot.md": "ae1aaaa72db08f09ab1bf17c96f389487260ce09339752ee7c854749a4389e86",
+    "tasks/prompts/pandoc_pdf.md": "0012d6f2f0c7f5d8c40ecc7a94dc25395e54096858ab4db4374ec7ab51bd3baa",
+    "tasks/prompts/repository_review.md": "5709213558f558bdffc05a3f80d98d481cca09366ba8dd71845e5a99e61e75e7",
+    "tasks/prompts/research_python.md": "9d0c2190bf28e2ab57ba6f11d54ba729b7e5d0bdcc3e1c1ba95578845e244d4e",
+    "tasks/prompts/scientific_writing.md": "cfa1f4cd4f6ad3b9965678e40a63ce1fd2c9cbf081b53cd27652f04a4ec50f83"
+  }
+}

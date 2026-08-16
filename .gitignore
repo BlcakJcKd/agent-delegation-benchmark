@@ -1,0 +1,25 @@
+__pycache__/
+.pytest_cache/
+*.egg-info/
+runs/
+delegate_runs/
+
+# Administrator-only ground truth and blind-review identity maps.
+private_admin/
+**/blind_map.json
+
+# Local environment and credential material.  These extensions are not used by
+# the benchmark's public fixtures or source tree.
+.env
+.env.*
+credentials/
+.credentials/
+*.pem
+*.p12
+*.pfx
+*.key
+id_rsa
+id_ed25519
+
+# Python bytecode can be emitted by contestants and local tests.
+*.py[cod]
