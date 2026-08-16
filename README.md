@@ -26,7 +26,11 @@ config schema and ownership rules. Claude-Code-specific orchestration
 guidance is in
 [docs/CLAUDE_CODE_ORCHESTRATION.md](docs/CLAUDE_CODE_ORCHESTRATION.md), and
 a short entry point for any other agent is
-[docs/LLM_HANDOFF.md](docs/LLM_HANDOFF.md).
+[docs/LLM_HANDOFF.md](docs/LLM_HANDOFF.md). If you're testing that the
+installed runtime is truly independent of this checkout, see
+[docs/USER_INSTALLATION.md](docs/USER_INSTALLATION.md#testing-portability-safely-and-a-hazard-to-avoid)
+first — a naive test method can lock an agent out of its own working
+directory.
 
 ## Method
 

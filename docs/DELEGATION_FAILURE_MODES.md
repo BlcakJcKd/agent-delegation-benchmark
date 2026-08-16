@@ -12,6 +12,12 @@ Validated in [`tests/test_delegation_failure_modes.py`](../tests/test_delegation
 [CLAUDE_CODE_SMOKE_TEST.md](CLAUDE_CODE_SMOKE_TEST.md) for the one live
 clean-path run this failure-mode sweep follows up on.
 
+The table below is about `delegation/core.py` consultation failures
+specifically. For a *test-methodology* hazard encountered while verifying
+the installed runtime's portability — a `chmod 000` self-lockout that is not
+a delegation, pipx, Git, or installation failure — see
+[USER_INSTALLATION.md](USER_INSTALLATION.md#testing-portability-safely-and-a-hazard-to-avoid).
+
 | Failure class | Symptom | Classification | Expected wrapper behaviour | Retry policy | Model performance inferable? | Operator action |
 |---|---|---|---|---|---|---|
 | Invalid scope (missing marker, malformed JSON, wrong/absent `mode`, present symlink) | `run_consultation` raises `ValueError` before any subprocess starts | Infrastructure / operator setup failure | `_validate_scope` rejects synchronously; no subprocess, no log directory beyond the raise point, workspace untouched | None — fix the workspace and re-invoke | No | Correct the scoped workspace (add/repair `.delegation-scope.json`, remove symlinks) and retry manually |

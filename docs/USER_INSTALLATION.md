@@ -117,6 +117,62 @@ setup has its own supported user-level skill location, point it at
 `~/.agents/skills/delegation/SKILL.md` (or check that product's current
 documentation) rather than duplicating the file.
 
+## Testing portability safely (and a hazard to avoid)
+
+Normal installation and normal use require **no `chmod` operation at all** —
+none of the install, update, or uninstall steps above touch permission bits
+on this checkout. This section is only relevant if you want to go further
+and independently *prove* the installed runtime has no residual dependency
+on the source checkout.
+
+**Do not use `chmod 000` on the active coding-agent working directory to
+test source-checkout independence.** During this project's own portability
+verification, that method was used and it worked for its immediate
+purpose — `delegate-status`, `ask-flash --help`, `ask-haiku --help`,
+`ask-sonnet --help`, and `delegate-config --help` all ran correctly from
+`/tmp` with the repository fully inaccessible — but it also locked the
+coding agent out of its own working directory: its Bash tool re-enters that
+directory before running each subsequent command, so once the directory had
+no execute permission, every following command (including the one meant to
+restore permissions) failed immediately with no output. This is a
+**test-method / troubleshooting hazard**, not a failure of the delegation
+runtime, pipx, Git, or the installer — the installed commands behaved
+exactly as intended throughout; only the *test rig* (an agent whose shell
+session lives inside the directory being blocked) got stuck. No benchmark
+evidence, config, logs, or repository content was lost or corrupted; the
+directory's contents were never touched, only its permission bits.
+
+Prefer one of these instead, none of which can lock anything out:
+
+- Invoke the installed commands from `/tmp` or another ordinary directory
+  (no permission changes needed — this alone proves cross-directory use).
+- Run with `PYTHONPATH` cleared/unset, to confirm nothing falls back to a
+  repo-relative import path.
+- Test inside a separate, already-isolated environment (e.g. the pipx venv
+  directly, or a container/VM) that has no copy of the source checkout at
+  all.
+- Copy the checkout to a disposable location, delete *that copy*, and
+  confirm the installed commands are unaffected — deleting a disposable
+  copy carries none of the lock-out risk of blocking the one your own
+  session is rooted in.
+- Mock or stub source-path access in a test (as this project's own
+  `tests/test_wrapper_scripts.py` and `tests/test_entrypoints.py` do)
+  rather than manipulating real filesystem permissions.
+
+If a working directory is ever accidentally made inaccessible this way,
+restore it to **whatever the normal mode is for that machine** — do not
+assume or prescribe a universal value like `755` or `775`. On the machine
+this incident happened on, `775` was correct only because it matched the
+sibling directories already under `~/Desktop/Side_Projects/`; that's local
+filesystem/umask policy on that one machine, not a requirement of this
+project. Check a sibling directory's mode (`stat -c "%a" ../some-other-dir`)
+or your system's default umask before picking a value. Note also that Git
+does not preserve ordinary directory modes such as `755`/`775`/`000` — it
+only tracks a file's executable bit, not directory permissions at all — so
+a fresh clone of this repository is governed by your local filesystem's and
+shell's umask defaults regardless of what any previous checkout's directory
+mode was.
+
 ## What's still true after install
 
 - The pinned model each route resolves to (`flash` -> `gemini-3.7-flash-medium`,
