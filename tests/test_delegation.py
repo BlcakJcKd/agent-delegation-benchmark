@@ -1,10 +1,19 @@
 import json
+import os
 import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from delegation.core import DELEGATES, DelegateSpec, build_argv, run_consultation
+from delegation.core import (
+    DELEGATES,
+    DELEGATION_CALLER_ENV,
+    DELEGATION_DEPTH_ENV,
+    DelegateSpec,
+    build_argv,
+    run_consultation,
+)
 from delegation.preflight import REQUIRED_HELP, check
 
 
@@ -71,7 +80,9 @@ class DelegationExecutionTests(unittest.TestCase):
             def fake_run(argv, **kwargs):
                 self.assertEqual(kwargs["cwd"], workspace)
                 self.assertTrue(kwargs["capture_output"])
-                self.assertNotIn("env", kwargs)
+                self.assertIn("env", kwargs)
+                self.assertEqual(kwargs["env"].get(DELEGATION_DEPTH_ENV), "1")
+                self.assertEqual(kwargs["env"].get("PATH"), os.environ.get("PATH"))
                 return subprocess.CompletedProcess(argv, 0, stdout="consultation", stderr="")
 
             code, record_dir = run_consultation("haiku", workspace, TASK, log_root=log_root, run=fake_run)
@@ -83,8 +94,31 @@ class DelegationExecutionTests(unittest.TestCase):
             self.assertEqual(record["requested_effort"], "medium")
             self.assertFalse(record["environment_captured"])
             self.assertFalse(record["recursive_delegation_enabled"])
+            self.assertEqual(record["child_delegation_depth"], 1)
+            self.assertEqual(record["caller"], "unknown")
             self.assertEqual((record_dir / "stdout.txt").read_text(), "consultation")
             self.assertEqual((record_dir / "prompt.md").read_text(), build_argv(DELEGATES["haiku"], workspace, TASK)[-1])
+
+    def test_caller_metadata_prefers_argument_then_env_then_unknown(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+
+            def fake_run(argv, **kwargs):
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+            code, record_dir = run_consultation(
+                "haiku", workspace, TASK, log_root=root / "logs", run=fake_run, caller="claude-code",
+            )
+            record = json.loads((record_dir / "execution.json").read_text())
+            self.assertEqual(record["caller"], "claude-code")
+
+            with patch.dict(os.environ, {DELEGATION_CALLER_ENV: "codex"}, clear=False):
+                code, record_dir = run_consultation(
+                    "haiku", workspace, TASK, log_root=root / "logs2", run=fake_run,
+                )
+            record = json.loads((record_dir / "execution.json").read_text())
+            self.assertEqual(record["caller"], "codex")
 
     def test_timeout_is_logged_as_exit_124(self):
         with TemporaryDirectory() as temp:
@@ -121,6 +155,91 @@ class DelegationExecutionTests(unittest.TestCase):
             (workspace / "linked-input").unlink()
             with self.assertRaisesRegex(ValueError, "outside"):
                 run_consultation("flash", workspace, TASK, log_root=workspace / "logs")
+
+
+class DelegationRecursionGuardTests(unittest.TestCase):
+    def _scope(self, root: Path) -> Path:
+        workspace = root / "scope"
+        workspace.mkdir()
+        (workspace / ".delegation-scope.json").write_text(json.dumps({"mode": "read-only"}))
+        return workspace
+
+    def test_root_invocation_succeeds_when_depth_marker_absent(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            called = []
+
+            def fake_run(argv, **kwargs):
+                called.append(argv)
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(DELEGATION_DEPTH_ENV, None)
+                code, _ = run_consultation("flash", workspace, TASK, log_root=root / "logs", run=fake_run)
+            self.assertEqual(code, 0)
+            self.assertEqual(len(called), 1)
+
+    def test_delegated_context_invocation_is_rejected_and_no_process_is_launched(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            called = []
+
+            def fake_run(argv, **kwargs):
+                called.append(argv)
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+            for depth in ("1", "2", "5"):
+                with patch.dict(os.environ, {DELEGATION_DEPTH_ENV: depth}, clear=False):
+                    with self.assertRaisesRegex(ValueError, "recursive delegation rejected"):
+                        run_consultation("flash", workspace, TASK, log_root=root / "logs", run=fake_run)
+            self.assertEqual(called, [], "no model process should be launched on a rejected call")
+
+    def test_malformed_depth_is_rejected_safely_without_launching_a_process(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            called = []
+
+            def fake_run(argv, **kwargs):
+                called.append(argv)
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+            with patch.dict(os.environ, {DELEGATION_DEPTH_ENV: "not-a-number"}, clear=False):
+                with self.assertRaisesRegex(ValueError, "malformed"):
+                    run_consultation("flash", workspace, TASK, log_root=root / "logs", run=fake_run)
+            self.assertEqual(called, [])
+
+    def test_zero_depth_is_treated_as_outside_a_delegated_context(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            called = []
+
+            def fake_run(argv, **kwargs):
+                called.append(argv)
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+            with patch.dict(os.environ, {DELEGATION_DEPTH_ENV: "0"}, clear=False):
+                code, _ = run_consultation("flash", workspace, TASK, log_root=root / "logs", run=fake_run)
+            self.assertEqual(code, 0)
+            self.assertEqual(len(called), 1)
+
+    def test_spawned_delegate_always_receives_depth_one_not_an_escalated_value(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            seen_env = {}
+
+            def fake_run(argv, **kwargs):
+                seen_env.update(kwargs["env"])
+                return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(DELEGATION_DEPTH_ENV, None)
+                run_consultation("flash", workspace, TASK, log_root=root / "logs", run=fake_run)
+            self.assertEqual(seen_env[DELEGATION_DEPTH_ENV], "1")
 
 
 class DelegationPreflightTests(unittest.TestCase):

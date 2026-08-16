@@ -8,6 +8,7 @@ approval design rather than becoming an accidental default.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -20,6 +21,20 @@ from typing import Callable
 
 READ_ONLY_CLAUDE_TOOLS: tuple[str, ...] = ("Read", "Glob", "Grep")
 DEFAULT_TIMEOUT_SECONDS = 300
+
+# Inherited-environment marker that identifies a process already running
+# inside a delegated (child) context.  The wrapper rejects any invocation
+# where this is already present and >= 1, and always sets it to "1" in a
+# spawned delegate's environment.  This only protects the approved wrappers
+# in this module; it cannot stop a delegate from invoking some other
+# installed CLI directly.
+DELEGATION_DEPTH_ENV = "AGENT_DELEGATION_DEPTH"
+
+# Provenance-only identifier for whichever agent/process is acting as the
+# primary owner (e.g. "codex", "claude-code", "manual"). Recorded for audit
+# purposes; it is never used to make a safety decision.
+DELEGATION_CALLER_ENV = "AGENT_DELEGATION_CALLER"
+DEFAULT_CALLER = "unknown"
 
 
 @dataclass(frozen=True)
@@ -94,6 +109,34 @@ def default_log_root() -> Path:
     return Path(__file__).resolve().parents[1] / "delegate_runs"
 
 
+def _check_recursion_guard() -> None:
+    """Reject an invocation already running inside a delegated context.
+
+    Only the inherited ``AGENT_DELEGATION_DEPTH`` environment marker is
+    consulted; a caller-supplied argument could not be trusted for this.
+    Any value >= 1, including a malformed one, is rejected fail-closed.
+    """
+    raw = os.environ.get(DELEGATION_DEPTH_ENV)
+    if raw is None:
+        return
+    try:
+        depth = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"recursive delegation rejected: malformed {DELEGATION_DEPTH_ENV}={raw!r}"
+        ) from exc
+    if depth >= 1:
+        raise ValueError(
+            f"recursive delegation rejected: {DELEGATION_DEPTH_ENV}={depth} indicates this "
+            "process is already running inside a delegated context; a delegate must never "
+            "invoke another delegate"
+        )
+
+
+def _resolve_caller(caller: str | None) -> str:
+    return caller or os.environ.get(DELEGATION_CALLER_ENV) or DEFAULT_CALLER
+
+
 def _validate_scope(workspace: Path) -> Path:
     resolved = workspace.expanduser().resolve()
     marker = resolved / ".delegation-scope.json"
@@ -127,19 +170,24 @@ def run_consultation(
     *,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     log_root: Path | None = None,
+    caller: str | None = None,
     run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[int, Path]:
     """Run exactly one read-only delegate and retain an auditable local record.
 
     The environment is passed through only to support the user's authenticated
-    CLI sessions; it is never serialized.  Logs are outside ``workspace`` so
-    the administrator's evidence collection does not modify the consulted
-    project.  A timeout is represented as exit code 124.
+    CLI sessions; it is never serialized.  The spawned delegate's environment
+    always has ``AGENT_DELEGATION_DEPTH`` set to ``"1"`` so an approved
+    wrapper cannot be recursively invoked from inside it.  Logs are outside
+    ``workspace`` so the administrator's evidence collection does not modify
+    the consulted project.  A timeout is represented as exit code 124.
     """
+    _check_recursion_guard()
     if delegate_name not in DELEGATES:
         raise ValueError(f"unknown delegate: {delegate_name}")
     if timeout_seconds <= 0:
         raise ValueError("timeout must be positive")
+    resolved_caller = _resolve_caller(caller)
     workspace = _validate_scope(workspace)
     spec = DELEGATES[delegate_name]
     executable = shutil.which(spec.executable)
@@ -158,9 +206,12 @@ def run_consultation(
     stdout = ""
     stderr = ""
     timed_out = False
+    child_env = dict(os.environ)
+    child_env[DELEGATION_DEPTH_ENV] = "1"
     try:
         completed = run(
             argv, cwd=workspace, text=True, capture_output=True, timeout=timeout_seconds,
+            env=child_env,
         )
         exit_code = completed.returncode
         stdout = completed.stdout
@@ -176,6 +227,7 @@ def run_consultation(
     record = {
         "delegate": spec.name,
         "mode": spec.mode,
+        "caller": resolved_caller,
         "requested_model": spec.model,
         "requested_effort": spec.effort,
         "workspace": str(workspace),
@@ -196,6 +248,7 @@ def run_consultation(
         ),
         "environment_captured": False,
         "recursive_delegation_enabled": False,
+        "child_delegation_depth": 1,
     }
     (record_dir / "execution.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
     return exit_code, record_dir

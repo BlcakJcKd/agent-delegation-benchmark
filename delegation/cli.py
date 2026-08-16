@@ -17,6 +17,13 @@ def _parser() -> argparse.ArgumentParser:
     source.add_argument("--prompt-file", type=Path, help="UTF-8 text file containing consultation task")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--log-root", type=Path, help="central log root; never defaults inside workspace")
+    parser.add_argument(
+        "--caller",
+        help=(
+            "provenance-only identifier for the primary agent, e.g. codex, claude-code, "
+            "manual; falls back to $AGENT_DELEGATION_CALLER, then 'unknown'"
+        ),
+    )
     return parser
 
 
@@ -26,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         code, record_dir = run_consultation(
             args.delegate, args.workspace, task,
-            timeout_seconds=args.timeout, log_root=args.log_root,
+            timeout_seconds=args.timeout, log_root=args.log_root, caller=args.caller,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"delegation error: {exc}")
