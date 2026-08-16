@@ -212,7 +212,9 @@ sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
 ```
 
 Then re-run the smoke test above and confirm no fresh `DENIED` entries
-appear in `journalctl -k` for the test's timeframe.
+appear in `journalctl -k` for the test's timeframe. On this project's
+machine, after loading the profile, `aa-status` lists both `bwrap` and
+`unpriv_bwrap` among the loaded profiles, and the smoke test above exits 0.
 
 Do **not** work around this by setting
 `kernel.apparmor_restrict_unprivileged_userns = 0` globally, and do not

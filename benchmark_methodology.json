@@ -25,7 +25,8 @@
   "controlled_evidence": {
     "tier_a": "runs/tier-a-controlled-001",
     "tier_b_composite_report": "runs/tier-b-controlled-003/TIER_B_REPORT.md",
-    "flash_crossover_report": "runs/FLASH_CROSSOVER_REPORT.md"
+    "flash_crossover_report": "runs/FLASH_CROSSOVER_REPORT.md",
+    "payg_crossover_report": "docs/PAYG_BENCHMARK_2026-08.md"
   },
   "excluded_pilot_runs": [
     "first-comparison",
