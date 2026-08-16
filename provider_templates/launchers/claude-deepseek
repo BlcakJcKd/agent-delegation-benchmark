@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="$(secret-tool lookup service ai-coding-provider provider deepseek || true)"
+
+if [[ -z "$key" ]]; then
+    echo "DeepSeek API key not found in login keyring." >&2
+    exit 1
+fi
+
+export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"
+export ANTHROPIC_AUTH_TOKEN="$key"
+unset ANTHROPIC_API_KEY
+export ENABLE_CLAUDEAI_MCP_SERVERS=false
+
+export ANTHROPIC_MODEL="deepseek-v4-pro[1m]"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="deepseek-v4-pro[1m]"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="deepseek-v4-pro[1m]"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="deepseek-v4-flash"
+
+export CLAUDE_CODE_SUBAGENT_MODEL="deepseek-v4-flash"
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="786432"
+
+unset key
+
+exec claude "$@"

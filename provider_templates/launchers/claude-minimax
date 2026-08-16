@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="$(secret-tool lookup service ai-coding-provider provider minimax || true)"
+
+if [[ -z "$key" ]]; then
+    echo "MiniMax API key not found in login keyring." >&2
+    exit 1
+fi
+
+export ANTHROPIC_BASE_URL="https://api.minimax.io/anthropic"
+export ANTHROPIC_AUTH_TOKEN="$key"
+unset ANTHROPIC_API_KEY
+export ENABLE_CLAUDEAI_MCP_SERVERS=false
+
+export ANTHROPIC_MODEL="MiniMax-M3[1m]"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="MiniMax-M3[1m]"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="MiniMax-M3[1m]"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="MiniMax-M3[1m]"
+
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"
+
+unset key
+
+exec claude "$@"

@@ -1,0 +1,23 @@
+model = "MiniMax-M3"
+model_provider = "minimax"
+model_reasoning_effort = "high"
+model_catalog_json = "__CODEX_HOME__/model-catalogs/minimax-m3.json"
+
+[features]
+shell_snapshot = false
+
+[shell_environment_policy]
+inherit = "all"
+ignore_default_excludes = false
+
+[shell_environment_policy.filters]
+"DEEPSEEK_API_KEY" = "exclude"
+"MINIMAX_API_KEY" = "exclude"
+"ANTHROPIC_API_KEY" = "exclude"
+"ANTHROPIC_AUTH_TOKEN" = "exclude"
+
+[model_providers.minimax]
+name = "MiniMax"
+base_url = "https://api.minimax.io/v1"
+wire_api = "responses"
+env_key = "MINIMAX_API_KEY"

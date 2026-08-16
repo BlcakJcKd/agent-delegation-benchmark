@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="$(secret-tool lookup service ai-coding-provider provider deepseek || true)"
+
+if [[ -z "$key" ]]; then
+    echo "DeepSeek API key not found in login keyring." >&2
+    exit 1
+fi
+
+export DEEPSEEK_API_KEY="$key"
+unset key
+
+exec codex --profile deepseek "$@"

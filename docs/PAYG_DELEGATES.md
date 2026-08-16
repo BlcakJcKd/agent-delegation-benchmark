@@ -6,6 +6,13 @@ the delegation system as **experimental, benchmark-pending** routes:
 makes them different from the existing quota-based routes (Flash/Haiku/
 Sonnet), the security assumptions they depend on, and how to enable them.
 
+Setting up the underlying provider profiles/launchers on a machine that
+doesn't have them yet is covered in
+[NEW_MACHINE_SETUP.md](NEW_MACHINE_SETUP.md) (step 6) via
+`scripts/setup-payg-providers.sh` and the non-secret templates in
+`provider_templates/` — this document assumes that part is already done and
+focuses on how the delegation layer uses it.
+
 ## Provider vs. transport
 
 Every route has two identities that must not be conflated:

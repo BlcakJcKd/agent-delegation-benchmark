@@ -38,6 +38,17 @@ disabled by default on every install — see
 [docs/PAYG_DELEGATES.md](docs/PAYG_DELEGATES.md) for the provider/transport
 distinction, credential handling, and how to opt in.
 
+## Setting this up on a new machine
+
+Cloning this repository plus [docs/NEW_MACHINE_SETUP.md](docs/NEW_MACHINE_SETUP.md)
+is enough for a fresh Codex or Claude Code session to reproduce the whole
+non-secret setup — install the delegation runtime, optionally bootstrap the
+DeepSeek/MiniMax PAYG providers from the templates in `provider_templates/`,
+and validate everything with zero model calls — asking you only for
+genuinely machine-local secrets (API keys, CLI logins) along the way. Point
+a fresh agent at [docs/SETUP_HANDOFF.md](docs/SETUP_HANDOFF.md) first; it's
+the short entry point that tells it where to read next and what not to do.
+
 ## Method
 
 Each of the six tasks has a fixed prompt in `tasks/prompts/` and starting files in `fixtures/`.

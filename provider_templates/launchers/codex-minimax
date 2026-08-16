@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+key="$(secret-tool lookup service ai-coding-provider provider minimax || true)"
+
+if [[ -z "$key" ]]; then
+    echo "MiniMax API key not found in login keyring." >&2
+    exit 1
+fi
+
+export MINIMAX_API_KEY="$key"
+unset key
+
+exec codex --profile minimax "$@"
