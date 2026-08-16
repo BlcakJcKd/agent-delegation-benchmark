@@ -2,25 +2,43 @@
 
 ## Status
 
-**OBJECTIVE SCREEN COMPLETE; QUALITATIVE (BLIND) REVIEW PENDING.**
+**STAGE 1 (research_python / diagnostic_plot / debug_package) AND STAGE 2
+(scientific_writing) OBJECTIVE SCREENS COMPLETE; BOTH QUALITATIVE (BLIND)
+REVIEWS PENDING / IN PROGRESS.**
 
 This is a selected crossover, not a new tier. It adds three experimental
 pay-as-you-go (PAYG) candidates — DeepSeek V4 Pro, DeepSeek V4 Flash, and
 MiniMax M3, all routed through the Codex-transport provider-profile
 launchers (`codex-deepseek`, `codex-minimax`; see
-[PAYG_DELEGATES.md](PAYG_DELEGATES.md)) — against the three clean Tier A
-tasks reused unmodified: `research_python`, `diagnostic_plot`,
-`debug_package`. `repository_review` v1 was correctly excluded per its
-known evaluator defect (§6 of the handbook); `scientific_writing` and
-`pandoc_pdf` were not included in this screen. No historical contestant
-(Terra, Sonnet, Gemini Pro Low, Luna, Haiku, Flash) was rerun.
+[PAYG_DELEGATES.md](PAYG_DELEGATES.md)). Stage 1 (§1–§14 below) covers the
+three clean Tier A tasks reused unmodified: `research_python`,
+`diagnostic_plot`, `debug_package`. Stage 2 (§15) adds the single frozen
+`scientific_writing` task, approved specifically because it is the one
+existing valid task with demonstrated blind-review discriminating power
+(§12/§15). `repository_review` v1 remains excluded per its known evaluator
+defect (handbook §6); `pandoc_pdf` was deliberately not run in either
+stage. No historical contestant (Terra, Sonnet, Gemini Pro Low, Luna,
+Haiku, Flash) was rerun in either stage.
 
-Raw evidence: `runs/payg-crossover-001/`. Run record explicitly contains:
+Raw evidence: `runs/payg-crossover-001/` (stage 1),
+`runs/payg-stage2-writing-001/` (stage 2). Stage 1 run record:
 
 ```text
 crossover = payg-candidate-crossover
 source_tier_reference = tier-a-medium
 ```
+
+Stage 2 run record:
+
+```text
+crossover = payg-stage2-writing
+source_tier_reference = tier-a-medium
+```
+
+Two independent blind-review packets exist for this crossover, with
+distinct, non-corresponding label sets: the stage-1 diagnostic-plot
+packet (`Candidate A/B/C`, §11) and the stage-2 writing packet
+(`Writing W1/W2/W3`, §15). Neither mapping is recorded in this document.
 
 ## 1. Purpose
 
@@ -310,3 +328,136 @@ affects the evidence in this report:
   same machine/session/time window) with no statistical power, per the
   project's standing limitations (handbook §11). It measures fit for this
   specific workflow, not general model capability.
+
+## 15. Second stage: scientific_writing
+
+**STATUS: OBJECTIVE SCREEN COMPLETE; QUALITATIVE (BLIND) REVIEW PENDING.**
+
+This is the second-stage experiment proposed in §12, approved and run as a
+single, separate, additional benchmark — not a rerun or extension of
+stage 1. It ran exactly one frozen task (`scientific_writing`) against
+exactly the same three PAYG candidates, exactly one attempt each (3 paid
+calls total). `research_python`, `diagnostic_plot`, `debug_package`,
+`pandoc_pdf`, `repository_review`, and every historical contestant were
+correctly **not** rerun. No third-stage task was run.
+
+Raw evidence: `runs/payg-stage2-writing-001/`. Run record:
+
+```text
+crossover = payg-stage2-writing
+source_tier_reference = tier-a-medium
+```
+
+### Configuration (identical to stage 1, re-verified for this run)
+
+| Agent | Provider | Requested model | Reasoning effort | Sandbox | Transport |
+|---|---|---|---|---|---|
+| `deepseek-pro` | DeepSeek | `deepseek-v4-pro` | `high` | `workspace-write` | `codex-deepseek` |
+| `deepseek-flash` | DeepSeek | `deepseek-v4-flash` | `high` | `workspace-write` | `codex-deepseek` |
+| `minimax-m3` | MiniMax | `MiniMax-M3` | `high` | `workspace-write` | `codex-minimax` |
+
+No substitution occurred (no "Pro Max," no silent model change) —
+confirmed directly from each `execution.json`'s `command` and
+`requested_configuration` fields, matching `run.json` exactly. The same
+`observed_model: null` transport-limitation caveat noted in §2 applies
+here too.
+
+### Evidence audit
+
+All three `result/execution.json` records show `exit_code: 0`,
+`execution_status: "completed"`, `harness_failure_reasons: []`, no
+permission denials, no missing required output. `runs/payg-stage2-writing-001/`
+contains exactly one task directory (`scientific_writing`) with exactly
+three agent subdirectories — no stray fourth entry, no other task
+directory. Each `RESULTS_DISCUSSION.md` was produced inside its own
+isolated workspace containing only the task fixtures
+(`data/evidence.csv`, `study_context.md`) and `TASK.md` — no
+`private_admin` material, no other contestant's output. **Clean, valid,
+complete run — same conclusion as stage 1's evidence audit (§4).**
+
+Frozen-input verification: `tasks/prompts/scientific_writing.md` SHA-256
+`cfa1f4cd4f6ad3b9965678e40a63ce1fd2c9cbf081b53cd27652f04a4ec50f83` and both
+fixture files' hashes were independently recomputed for this stage and
+matched `fixtures.lock.json` and the historical Tier A/Flash-crossover
+record exactly — the task contract and evidence given to these three PAYG
+candidates is byte-identical to what Terra, Sonnet, Gemini 3.1 Pro Low,
+and Gemini 3.7 Flash Medium received.
+
+### Objective results, timing, and usage
+
+| Agent | Score | Wall time | Input (of which cached) | Output | Reasoning |
+|---|---:|---:|---:|---:|---:|
+| DeepSeek Pro | 6/6 | 26.35 s | 69,297 (66,176) | 1,616 | 301 |
+| DeepSeek Flash | 6/6 | 15.07 s | 66,980 (64,128) | 1,036 | 154 |
+| MiniMax M3 | 6/6 | 28.04 s | 206,254 (170,898) | 2,218 | 0 |
+
+All three scored the maximum rubric point (6/6: separate Results/Discussion
+sections present, and the effect estimate, both means, CI, p-value, and a
+limitation all correctly stated). As in stage 1, **cost is unavailable**:
+no dollar figure was reported by either transport CLI, and no versioned
+DeepSeek/MiniMax pricing metadata exists in this repository to calculate
+one — this is stated as "unavailable," not estimated.
+
+DeepSeek Flash was again the fastest of the three; MiniMax M3 again used
+substantially more input tokens (≈3x DeepSeek's, with a lower cached
+fraction) than either DeepSeek variant, consistent with the pattern
+observed in stage 1 (§7).
+
+### Historical comparator (re-verified from raw evidence, not rerun)
+
+| Configuration | Objective score | Wall time |
+|---|---:|---:|
+| Codex Terra / medium | 5/6 | 25.09 s |
+| Claude Sonnet / medium | 5/6 | 11.64 s |
+| Gemini 3.1 Pro Low | 6/6 | 95.98 s |
+| Gemini 3.7 Flash Medium | 6/6 | 33.50 s |
+| DeepSeek V4 Pro / high (this stage) | 6/6 | 26.35 s |
+| DeepSeek V4 Flash / high (this stage) | 6/6 | 15.07 s |
+| MiniMax M3 / high (this stage) | 6/6 | 28.04 s |
+
+All figures above were re-derived directly from each source run's raw
+`execution.json`/`evaluation.json` (`runs/tier-a-controlled-001/` for
+Terra/Sonnet/Gemini 3.1 Pro Low, `runs/flash-crossover-scientific-writing/`
+for Gemini 3.7 Flash Medium), not copied from prior report prose, and
+matched the previously published figures exactly. As with stage 1, this is
+not an equal-compute or equal-conditions comparison — different CLIs,
+machines, sessions, and time windows.
+
+All three PAYG candidates matched the objective ceiling already reached by
+Gemini 3.1 Pro Low and Gemini 3.7 Flash Medium here, and exceeded Terra's
+and Sonnet's 5/6 (both of which historically omitted one required rubric
+token). **The automated rubric only checks for the presence of specific
+values/section headers, not calibration or overclaiming** — exactly the
+axis this stage's blind review (below) is required to assess before any
+quality claim is made. Objective score alone does not distinguish the
+three PAYG candidates from each other, or from Gemini 3.1 Pro Low / Flash
+Medium, on this stage either.
+
+### Qualitative review — pending
+
+An anonymized blind-review packet has been prepared:
+`runs/payg-writing-blind-packet-20260816/` (see its `README.md` for the
+common task/evidence brief given to every contestant and the reviewer
+scoring criteria). It contains three anonymously labelled files
+(`Writing W1/W2/W3` — deliberately distinct from the stage-1 plot
+packet's `Candidate A/B/C` labels, so the two cannot be confused or
+cross-referenced), each containing one candidate's `RESULTS_DISCUSSION.md`
+verbatim, with file timestamps normalized and no provider/model/timing/
+token/path metadata included. No historical contestant's response is
+included in the packet. The mapping was generated with a real
+(OS-entropy) random shuffle and is stored separately and privately at
+`runs/payg-stage2-writing-001/WRITING_BLIND_MAP.json`, excluded from git
+via the repository-wide `runs/` ignore rule, to be revealed only after
+both this review and the pending stage-1 plot review are frozen.
+
+This report makes no claim about calibration, overclaiming, or writing
+quality for any of the three candidates. Do not treat the 6/6 objective
+scores above as a substitute for this review.
+
+### Stopping rule confirmation
+
+Per the approved scope for this stage: no `pandoc_pdf`, no
+`repository_review`/`repository_review_v2`, no "Pro Max" or alternate
+reasoning-effort variant, no implementation task, and no third-stage
+benchmark was run. Exactly three new paid contestant calls were made in
+total for this stage.
