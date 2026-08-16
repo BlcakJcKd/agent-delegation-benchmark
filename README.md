@@ -36,7 +36,12 @@ directory.
 experimental, pay-as-you-go (PAYG) routes on top of the same runtime,
 disabled by default on every install — see
 [docs/PAYG_DELEGATES.md](docs/PAYG_DELEGATES.md) for the provider/transport
-distinction, credential handling, and how to opt in.
+distinction, credential handling, and how to opt in. A completed objective
++ blind-review crossover benchmark for these three routes is in
+[docs/PAYG_BENCHMARK_2026-08.md](docs/PAYG_BENCHMARK_2026-08.md); the
+evidence-guided (but still opt-in, still disabled-by-default) routing
+guidance it informs is in
+[docs/DELEGATION_POLICY.md](docs/DELEGATION_POLICY.md).
 
 ## Setting this up on a new machine
 

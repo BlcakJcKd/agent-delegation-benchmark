@@ -93,10 +93,15 @@ same kind of read-only consultation wrapper, routed through independently
 verified Codex provider-profile launchers (`codex-deepseek`/`codex-minimax`)
 rather than OpenAI's own Codex inference — see
 [docs/PAYG_DELEGATES.md](../../docs/PAYG_DELEGATES.md) for the transport
-distinction. They are **experimental PAYG routes, benchmark pending**: not
-yet evaluated through this project's benchmark harness, and not assigned any
-task-specific role. Do not treat them as superior or inferior to
-Flash/Haiku/Sonnet from this text — there is no evidence yet either way.
+distinction. They are **experimental PAYG routes**: a two-task objective +
+blind-review benchmark has now evaluated them (see
+[docs/PAYG_BENCHMARK_2026-08.md](../../docs/PAYG_BENCHMARK_2026-08.md) and
+[docs/DELEGATION_POLICY.md](../../docs/DELEGATION_POLICY.md) for the
+evidence-guided per-route roles), but they remain **disabled by default and
+metered/opt-in** on every install — evidence about quality does not change
+that. Do not mechanically prefer DeepSeek Flash for every task just because
+it led that crossover; apply the same task-fit judgement you would for any
+other route.
 
 They default to **disabled** on every install; a disabled route in
 `delegate-status` means exactly that — do not route around it by invoking

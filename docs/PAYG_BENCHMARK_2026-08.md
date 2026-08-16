@@ -2,9 +2,12 @@
 
 ## Status
 
-**STAGE 1 (research_python / diagnostic_plot / debug_package) AND STAGE 2
-(scientific_writing) OBJECTIVE SCREENS COMPLETE; BOTH QUALITATIVE (BLIND)
-REVIEWS PENDING / IN PROGRESS.**
+**COMPLETE FOR NOW.** Both objective screens (stage 1: `research_python` /
+`diagnostic_plot` / `debug_package`; stage 2: `scientific_writing`) and
+both blind qualitative reviews (diagnostic-plot, scientific-writing) are
+finished and scored; both mappings have been revealed (§11, §15). This is
+not a claim of universal conclusiveness — see §16 for what is and is not
+supported, and §17 for what would justify a future stage.
 
 This is a selected crossover, not a new tier. It adds three experimental
 pay-as-you-go (PAYG) candidates — DeepSeek V4 Pro, DeepSeek V4 Flash, and
@@ -35,10 +38,12 @@ crossover = payg-stage2-writing
 source_tier_reference = tier-a-medium
 ```
 
-Two independent blind-review packets exist for this crossover, with
+Two independent blind-review packets were used for this crossover, with
 distinct, non-corresponding label sets: the stage-1 diagnostic-plot
 packet (`Candidate A/B/C`, §11) and the stage-2 writing packet
-(`Writing W1/W2/W3`, §15). Neither mapping is recorded in this document.
+(`Writing W1/W2/W3`, §15). Both reviews were scored before either mapping
+was revealed; both mappings were confirmed frozen and revealed only after
+both sets of scores were in hand.
 
 ## 1. Purpose
 
@@ -218,24 +223,42 @@ debug_package        5/5  (all three)
 
 **No permanent routing role is assigned to any of the three from this evidence.** PAYG routes remain disabled for ordinary delegation (§13).
 
-## 11. Qualitative review — pending
+## 11. Qualitative review — complete
 
-Blind diagnostic-plot packet prepared for independent review:
-`runs/payg-blind-packet-20260816/` (see its `README.md` for reviewer
-instructions and scoring criteria). It contains three anonymously renamed
-PNGs (`Candidate A/B/C`, no other identifying metadata, timestamps
-normalized) and no mapping file. The mapping is stored separately and
-privately at `runs/payg-crossover-001/PACKET_BLIND_MAP.json` (excluded
-from git via the repository-wide `runs/` ignore rule), to be revealed only
-after review scores are frozen, per this project's standing blind-review
-protocol (handbook §2, "objective and blind evaluation are separate").
-The mapping was generated with a real (OS-entropy) random shuffle, not a
-deterministic or alphabetical assignment, so candidate-label order carries
-no information.
+Blind diagnostic-plot packet: `runs/payg-blind-packet-20260816/` (see its
+`README.md` for the reviewer instructions and scoring criteria that were
+used). It contained three anonymously renamed PNGs (`Candidate A/B/C`, no
+identifying metadata, timestamps normalized) and no mapping file. The
+mapping was generated with a real (OS-entropy) random shuffle, not a
+deterministic or alphabetical assignment, and was kept private
+(`runs/payg-crossover-001/PACKET_BLIND_MAP.json`) until the independent
+reviewer had scored all three candidates, per this project's standing
+blind-review protocol (handbook §2, "objective and blind evaluation are
+separate"). Scores were frozen before the mapping was revealed.
 
-This report makes no visual-quality claim about the three plots. Do not
-treat the objective PNG-validity check (§5) as a substitute for this
-review.
+| Label | Score /10 | Revealed identity |
+|---|---:|---|
+| Candidate A | 8.5 | MiniMax M3 |
+| Candidate C | 8.0 | DeepSeek V4 Flash |
+| Candidate B | 7.0 | DeepSeek V4 Pro |
+
+By identity:
+
+| Agent | Blind plot score /10 |
+|---|---:|
+| MiniMax M3 | 8.5 |
+| DeepSeek V4 Flash | 8.0 |
+| DeepSeek V4 Pro | 7.0 |
+
+Reviewer's qualitative note: MiniMax M3 produced the strongest diagnostic
+plot of the three, with particularly good diagnostic communication and
+outlier annotation. DeepSeek V4 Pro's plot was the weakest of the three —
+this is a visual/qualitative judgment, distinct from and not contradicted
+by its objective 3/3 PNG-validity score (§5), which does not assess visual
+quality at all.
+
+This is one anonymized reviewer's scoring of three plots from a tiny
+sample — informative, not statistically powered evidence (handbook §11).
 
 ## 12. Proposed second-stage benchmark — NOT RUN
 
@@ -433,26 +456,50 @@ quality claim is made. Objective score alone does not distinguish the
 three PAYG candidates from each other, or from Gemini 3.1 Pro Low / Flash
 Medium, on this stage either.
 
-### Qualitative review — pending
+### Qualitative review — complete
 
-An anonymized blind-review packet has been prepared:
-`runs/payg-writing-blind-packet-20260816/` (see its `README.md` for the
-common task/evidence brief given to every contestant and the reviewer
-scoring criteria). It contains three anonymously labelled files
-(`Writing W1/W2/W3` — deliberately distinct from the stage-1 plot
-packet's `Candidate A/B/C` labels, so the two cannot be confused or
-cross-referenced), each containing one candidate's `RESULTS_DISCUSSION.md`
-verbatim, with file timestamps normalized and no provider/model/timing/
-token/path metadata included. No historical contestant's response is
-included in the packet. The mapping was generated with a real
-(OS-entropy) random shuffle and is stored separately and privately at
-`runs/payg-stage2-writing-001/WRITING_BLIND_MAP.json`, excluded from git
-via the repository-wide `runs/` ignore rule, to be revealed only after
-both this review and the pending stage-1 plot review are frozen.
+Blind writing-review packet: `runs/payg-writing-blind-packet-20260816/`
+(see its `README.md` for the common task/evidence brief given to every
+contestant and the reviewer scoring criteria that were used). It contained
+three anonymously labelled files (`Writing W1/W2/W3` — deliberately
+distinct from the stage-1 plot packet's `Candidate A/B/C` labels, so the
+two cannot be confused or cross-referenced), each containing one
+candidate's `RESULTS_DISCUSSION.md` verbatim, with file timestamps
+normalized and no provider/model/timing/token/path metadata included. No
+historical contestant's response was included in the packet. The mapping
+was generated with a real (OS-entropy) random shuffle and was kept private
+(`runs/payg-stage2-writing-001/WRITING_BLIND_MAP.json`) until the
+independent reviewer had scored all three candidates and the stage-1 plot
+review was also frozen. Scores were frozen before the mapping was revealed.
 
-This report makes no claim about calibration, overclaiming, or writing
-quality for any of the three candidates. Do not treat the 6/6 objective
-scores above as a substitute for this review.
+| Label | Score /10 | Revealed identity |
+|---|---:|---|
+| Writing W1 | 9.5 | DeepSeek V4 Flash |
+| Writing W3 | 9.0 | DeepSeek V4 Pro |
+| Writing W2 | 8.5 | MiniMax M3 |
+
+By identity:
+
+| Agent | Blind writing score /10 |
+|---|---:|
+| DeepSeek V4 Flash | 9.5 |
+| DeepSeek V4 Pro | 9.0 |
+| MiniMax M3 | 8.5 |
+
+Reviewer's qualitative note: DeepSeek V4 Flash's submission was the
+strongest of the three — excellent causal restraint and evidence
+calibration, and it directly engaged with the width of the confidence
+interval rather than just restating it. DeepSeek V4 Pro was also
+scientifically strong and restrained. MiniMax M3's writing remained good
+but used slightly more interpretive wording than the other two, and was
+notably the most token-hungry of the three on this task (§7 pattern
+repeated here — see the objective table above).
+
+This confirms the automated rubric's blind spot flagged in the section
+above: all three scored 6/6 objectively, but the blind review separates
+them meaningfully on calibration and restraint — exactly the axis the
+rubric cannot see. This remains one anonymized reviewer's scoring of a
+tiny sample (handbook §11).
 
 ### Stopping rule confirmation
 
@@ -461,3 +508,87 @@ Per the approved scope for this stage: no `pandoc_pdf`, no
 reasoning-effort variant, no implementation task, and no third-stage
 benchmark was run. Exactly three new paid contestant calls were made in
 total for this stage.
+
+## 16. Final interpretation and routing recommendation
+
+Combining both objective screens (§5, §15) and both now-revealed blind
+reviews (§11, §15): all three candidates matched each other on every
+objective check across both stages (13/13 routine, 6/6 writing, for all
+three). The blind reviews are what actually separate them, and they
+separate consistently with the timing/token evidence already reported.
+
+**DeepSeek V4 Flash / high** is, on this evidence, the strongest
+general-purpose PAYG candidate of the three tested. It has maximum
+objective correctness across both stages, the fastest aggregate time in
+both the routine screen (70.1 s) and the writing screen (15.07 s), the
+best blind scientific-writing score (9.5/10), a strong (second-place,
+8.0/10) blind plot score, and substantially lower token consumption than
+MiniMax on the writing task. This supports considering it for routine
+coding, debugging, repository analysis, plotting/data work, scientific
+drafting, bounded reasoning, and independent review — **once explicitly
+enabled by the user** (§18). It is not evidence that Flash is globally
+equivalent to a frontier model, and this is a two-task, single-attempt,
+single-reviewer sample (handbook §11).
+
+**MiniMax M3 / high** is, on this evidence, a credible independent PAYG
+alternative — maximum objective correctness across both stages and the
+best blind diagnostic-plot score (8.5/10), with particularly good
+diagnostic communication/outlier annotation. It was slower than Flash in
+both stages and used substantially more input tokens on the writing task
+(with a lower cached fraction), and scored slightly lower than Flash and
+Pro on blind writing calibration. This supports it as a useful choice
+specifically for plotting/visual diagnostics, implementation alternatives,
+second opinions, and provider/model diversity, rather than as a default.
+
+**DeepSeek V4 Pro / high** remains, on this evidence, a specialist/
+experimental route rather than a routine default. It matched Flash and
+MiniMax objectively on both stages and scored well on blind writing
+(9.0/10, scientifically restrained), but was materially slower than Flash
+on the routine screen (152.1 s vs. 70.1 s aggregate) and scored lowest of
+the three on the blind plot review (7.0/10). **Current evidence does not
+justify preferring Pro over Flash for routine delegated work.** It remains
+worth keeping available for genuinely difficult tasks this small screen
+cannot exercise — architecture reasoning, subtle numerical reasoning,
+difficult cross-file debugging, adversarial review, complex scientific
+reasoning — but that use case has not itself been tested, and a synthetic
+benchmark should not be run merely to justify choosing Pro (§17).
+
+These findings **supplement, not replace**, this project's existing
+evidence-based routing (`docs/DELEGATION_POLICY.md`): Gemini 3.7 Flash
+Medium remains a proven, subscription/quota-backed cheap delegate; Claude
+Sonnet/Haiku and Codex Terra/Luna retain their existing roles. PAYG routes
+are metered, opt-in, disabled-by-default capacity, not a replacement for
+those routes, and should not be mechanically preferred for every task
+merely because DeepSeek Flash won this crossover — task fit, native-vs-
+external routing, verification cost, provider diversity, subscription
+quota, and PAYG spending all remain relevant per-task considerations (see
+`docs/DELEGATION_POLICY.md` for the updated guidance this evidence now
+informs).
+
+## 17. Benchmark status: complete for now
+
+This PAYG crossover experiment is **complete for now** — routine crossover
+complete, scientific-writing discriminator complete, blind plot review
+complete, blind writing review complete. It is not being declared
+universally conclusive: it is a tiny, single-attempt, single-reviewer,
+two-task sample on one machine at one point in time (handbook §11).
+
+No further PAYG benchmarking is approved by this record. A future stage
+should be triggered by a real operational decision need — for example,
+"is DeepSeek Pro worth using for genuinely difficult work Flash may fail
+at?" — rather than run automatically or speculatively. If that need
+arises, follow the same protocol used for both stages here: smallest
+useful next experiment, no-model preflight first, explicit human
+confirmation immediately before any paid call, and a fresh, immutable run
+label.
+
+## 18. Fresh-install and current-machine defaults
+
+Completing this benchmark changes **routing knowledge, not spending
+permission**. All three PAYG routes (`deepseek-pro`, `deepseek-flash`,
+`minimax-m3`) remain **disabled by default** on a fresh install of this
+project, and this record does not enable any of them — enabling a route is
+always an explicit, per-machine `delegate-config` action taken by the user
+who will pay for it, never something this repository or an agent does
+automatically. See `docs/DELEGATE_CONFIGURATION.md` for the enable/disable
+commands.

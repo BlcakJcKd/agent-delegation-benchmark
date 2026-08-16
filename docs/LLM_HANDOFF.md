@@ -39,8 +39,11 @@ delegate-status`), you do not need this repository at all to use it — see
 - External consultation is read-only by default; no wrapper here grants a
   delegate write access.
 - `ask-deepseek-pro`/`ask-deepseek-flash`/`ask-minimax-m3` are experimental
-  PAYG routes, disabled by default and not evidence-based yet — see
-  [`docs/PAYG_DELEGATES.md`](PAYG_DELEGATES.md). Only use one if
+  PAYG routes, now evidence-guided (see
+  [`docs/PAYG_BENCHMARK_2026-08.md`](PAYG_BENCHMARK_2026-08.md)) but still
+  disabled by default and metered/opt-in regardless — see
+  [`docs/PAYG_DELEGATES.md`](PAYG_DELEGATES.md) and
+  [`docs/DELEGATION_POLICY.md`](DELEGATION_POLICY.md). Only use one if
   `delegate-status` already reports it `available`.
 
 This is intentionally not a restatement of the full handbook or policy —

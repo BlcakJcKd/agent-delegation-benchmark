@@ -40,18 +40,31 @@ user (e.g. quota exhausted) independent of this guidance — check
 [DELEGATE_CONFIGURATION.md](DELEGATE_CONFIGURATION.md) for the config that
 governs it and who's allowed to change it.
 
-### Experimental PAYG routes: not yet in this table
+### Experimental PAYG routes: evidence-guided, still opt-in
 
 `deepseek-pro`, `deepseek-flash`, and `minimax-m3` (via `ask-deepseek-pro`/
 `ask-deepseek-flash`/`ask-minimax-m3`) exist as optional, pay-as-you-go
 transport through independently verified Codex provider-profile launchers —
-see [PAYG_DELEGATES.md](PAYG_DELEGATES.md). They are deliberately **excluded**
-from the evidence-based table above: no benchmark run has evaluated them, so
-this policy makes no claim about where they fit relative to Flash, Haiku,
-Sonnet, or Terra. They default to disabled and require an explicit
-`delegate-config` opt-in. Run `delegate-status --primary <identity>` before
-considering one, and do not let an unbenchmarked PAYG route displace the
-evidence-based recommendations above.
+see [PAYG_DELEGATES.md](PAYG_DELEGATES.md). They are deliberately kept
+**out of the table above**, not because they are unevaluated (they now are
+— see [PAYG_BENCHMARK_2026-08.md](PAYG_BENCHMARK_2026-08.md)), but because
+they remain **disabled by default and metered/opt-in**, unlike every route
+in the main table, which is available without a per-call cost decision. The
+completed benchmark changes what's *known*, not what's *enabled*.
+
+| Delegate | Good initial uses (evidence-guided) | Caveats |
+|---|---|---|
+| DeepSeek V4 Flash / high | routine coding, debugging, repository analysis, plotting/data work, scientific drafting, bounded reasoning, independent review | fastest and best-scoring of the three PAYG candidates on both tested screens (objective + blind); still a two-task, single-attempt, single-reviewer sample — not a claim of frontier-model equivalence |
+| MiniMax M3 / high | plotting/visual diagnostics specifically, implementation alternatives, second opinions, provider/model diversity, independent critique | matched Flash/Pro objectively; best blind diagnostic-plot score but slower and more token-hungry than Flash, and slightly weaker blind writing calibration |
+| DeepSeek V4 Pro / high | keep as a specialist/experimental route for genuinely difficult work Flash may fail at (architecture reasoning, subtle numerical reasoning, difficult cross-file debugging, adversarial review, complex scientific reasoning) — that use case is untested | materially slower than Flash on the routine screen; weakest blind plot score of the three; current evidence does **not** justify preferring it over Flash for routine delegated work |
+
+Do not mechanically route every task to DeepSeek Flash simply because it
+led this crossover — task fit, native-vs-external routing, verification
+cost, provider diversity, subscription quota, and PAYG spending all remain
+relevant per-task considerations, same as for the main table. These three
+routes default to **disabled** and require an explicit `delegate-config`
+opt-in per machine; run `delegate-status --primary <identity>` before
+considering one, and never enable one on the user's behalf.
 
 ## Escalation pattern
 
