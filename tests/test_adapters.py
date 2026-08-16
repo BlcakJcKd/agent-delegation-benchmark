@@ -1,7 +1,16 @@
 import unittest
 from pathlib import Path
 
-from benchmark.adapters import AntigravityAdapter, ClaudeAdapter, CodexAdapter, CLAUDE_TASK_ALLOWED_TOOLS
+from benchmark.adapters import (
+    ADAPTERS,
+    AntigravityAdapter,
+    ClaudeAdapter,
+    CodexAdapter,
+    DeepSeekAdapter,
+    MiniMaxAdapter,
+    CLAUDE_TASK_ALLOWED_TOOLS,
+    configured_adapters,
+)
 from benchmark.preflight import _adapter_command_problems
 
 
@@ -83,3 +92,72 @@ class AdapterArgvTests(unittest.TestCase):
         self.assertLess(command.index("--model"), print_index)
         self.assertNotIn("--dangerously-skip-permissions", command)
         self.assertEqual(_adapter_command_problems(AntigravityAdapter(model="gemini-3.7-flash-high")), [])
+
+    def _assert_codex_transport_payg_shape(self, adapter, executable, model):
+        command = adapter.command(WORKSPACE, PROMPT, RESULT)
+        self.assertEqual(command[0], executable)
+        self.assertEqual(command[-1], PROMPT)
+        self.assertNotIn("--approve-for-me", command)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+        self.assertNotIn("danger-full-access", command)
+        self.assertEqual(command[command.index("--sandbox") + 1], "workspace-write")
+        self.assertEqual(command[command.index("--model") + 1], model)
+        self.assertEqual(command[command.index("--config") + 1], 'model_reasoning_effort="high"')
+        self.assertEqual(command[command.index("--cd") + 1], str(WORKSPACE))
+        self.assertIn("--json", command)
+        self.assertEqual(command[command.index("--output-last-message") + 1], str(RESULT / "last_message.txt"))
+        self.assertEqual(_adapter_command_problems(adapter), [])
+
+    def test_deepseek_pro_uses_the_codex_deepseek_launcher_pinned_to_high_effort(self):
+        self._assert_codex_transport_payg_shape(
+            DeepSeekAdapter(name="deepseek-pro", model="deepseek-v4-pro"), "codex-deepseek", "deepseek-v4-pro",
+        )
+
+    def test_deepseek_flash_uses_the_codex_deepseek_launcher_pinned_to_high_effort(self):
+        self._assert_codex_transport_payg_shape(
+            DeepSeekAdapter(name="deepseek-flash", model="deepseek-v4-flash"), "codex-deepseek", "deepseek-v4-flash",
+        )
+
+    def test_minimax_m3_uses_the_codex_minimax_launcher_pinned_to_high_effort(self):
+        self._assert_codex_transport_payg_shape(MiniMaxAdapter(model="MiniMax-M3"), "codex-minimax", "MiniMax-M3")
+
+    def test_deepseek_and_minimax_adapters_are_never_the_openai_codex_executable(self):
+        # The self-provider-guard-equivalent distinction for the benchmark
+        # harness: these must never resolve to plain "codex" (normal OpenAI
+        # Codex), only to their own provider-profile launcher.
+        self.assertNotEqual(DeepSeekAdapter().executable, "codex")
+        self.assertNotEqual(MiniMaxAdapter().executable, "codex")
+
+    def test_payg_adapters_describe_their_provider_transport_and_billing(self):
+        deepseek = DeepSeekAdapter(name="deepseek-pro", model="deepseek-v4-pro").describe()
+        self.assertEqual(deepseek["provider"], "deepseek")
+        self.assertEqual(deepseek["transport"], "codex")
+        self.assertEqual(deepseek["billing"], "payg")
+        self.assertEqual(deepseek["maturity"], "experimental")
+        minimax = MiniMaxAdapter(model="MiniMax-M3").describe()
+        self.assertEqual(minimax["provider"], "minimax")
+        self.assertEqual(minimax["transport"], "codex")
+        self.assertEqual(minimax["billing"], "payg")
+
+
+class RegistrationTests(unittest.TestCase):
+    def test_global_adapters_include_the_three_payg_agent_keys(self):
+        for key in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+            self.assertIn(key, ADAPTERS)
+
+    def test_configured_adapters_pins_model_per_payg_agent_key(self):
+        adapters = configured_adapters({
+            "deepseek-pro": "deepseek-v4-pro",
+            "deepseek-flash": "deepseek-v4-flash",
+            "minimax-m3": "MiniMax-M3",
+        })
+        self.assertEqual(adapters["deepseek-pro"].model, "deepseek-v4-pro")
+        self.assertEqual(adapters["deepseek-pro"].name, "deepseek-pro")
+        self.assertEqual(adapters["deepseek-flash"].model, "deepseek-v4-flash")
+        self.assertEqual(adapters["deepseek-flash"].name, "deepseek-flash")
+        self.assertEqual(adapters["minimax-m3"].model, "MiniMax-M3")
+
+    def test_configured_adapters_without_payg_models_leaves_them_unset(self):
+        adapters = configured_adapters({"codex": "some-model"})
+        self.assertIsNone(adapters["deepseek-pro"].model)
+        self.assertIsNone(adapters["minimax-m3"].model)

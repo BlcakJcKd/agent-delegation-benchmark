@@ -23,6 +23,15 @@ HELP_REQUIREMENTS: dict[str, tuple[tuple[list[str], tuple[str, ...]], ...]] = {
     "agy": (
         (["agy", "--help"], ("--print", "--output-format", "--mode", "accept-edits", "--sandbox", "--model")),
     ),
+    "deepseek-pro": (
+        (["codex-deepseek", "exec", "--help"], ("--sandbox", "workspace-write", "--json", "--model", "--cd")),
+    ),
+    "deepseek-flash": (
+        (["codex-deepseek", "exec", "--help"], ("--sandbox", "workspace-write", "--json", "--model", "--cd")),
+    ),
+    "minimax-m3": (
+        (["codex-minimax", "exec", "--help"], ("--sandbox", "workspace-write", "--json", "--model", "--cd")),
+    ),
 }
 
 TASK_EXECUTABLES: dict[str, tuple[str, ...]] = {
@@ -79,6 +88,14 @@ def _adapter_command_problems(adapter: Adapter, task_id: str | None = None) -> l
                 problems.append(f"missing Codex argument: {required}")
         if adapter.reasoning_effort and f'model_reasoning_effort="{adapter.reasoning_effort}"' not in command:
             problems.append("missing explicit Codex reasoning-effort configuration")
+    if adapter.executable in {"codex-deepseek", "codex-minimax"}:
+        if "--approve-for-me" in command:
+            problems.append("--approve-for-me must not be combined with --sandbox")
+        for required in ("exec", "--sandbox", "workspace-write", "--json", "--model", "--cd", "--output-last-message"):
+            if required not in command:
+                problems.append(f"missing {adapter.executable} argument: {required}")
+        if 'model_reasoning_effort="high"' not in command:
+            problems.append("missing explicit reasoning-effort configuration")
     if adapter.name == "claude":
         if command[command.index("--permission-mode") + 1] != "auto":
             problems.append("Claude permission mode is not auto")
