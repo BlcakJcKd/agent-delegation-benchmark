@@ -24,8 +24,17 @@ def _copy_frozen_material(destination: Path) -> None:
     shutil.copytree(source / "fixtures", destination / "fixtures")
     shutil.copytree(source / "tasks", destination / "tasks")
     shutil.copy2(source / "fixtures.lock.json", destination / "fixtures.lock.json")
+    manifest_source = source / "private_admin/manifests/repository_review.json"
+    if not manifest_source.exists():
+        # private_admin/ is administrator-only seeded-issue ground truth,
+        # deliberately gitignored and absent from a public clone -- skip
+        # rather than fail or fabricate it, per docs/SETUP_HANDOFF.md.
+        raise unittest.SkipTest(
+            "private_admin/manifests/repository_review.json is admin-only "
+            "material, not present in a public clone"
+        )
     (destination / "private_admin/manifests").mkdir(parents=True)
-    shutil.copy2(source / "private_admin/manifests/repository_review.json", destination / "private_admin/manifests/repository_review.json")
+    shutil.copy2(manifest_source, destination / "private_admin/manifests/repository_review.json")
 
 
 class _FakeAdapter(Adapter):

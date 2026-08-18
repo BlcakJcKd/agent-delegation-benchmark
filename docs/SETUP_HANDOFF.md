@@ -27,6 +27,17 @@ environment by following the repository docs."
   `secret-tool store` is interactive precisely so this can't happen — never
   script around that by passing a key as a command-line argument or
   environment variable literal.
+- **Checking whether a keyring entry exists is not the same as reading it.**
+  Use `secret-tool lookup service ai-coding-provider provider <name>
+  >/dev/null 2>&1` and inspect only the exit status — this is the pattern
+  `scripts/setup-payg-providers.sh` already uses. Never run `secret-tool
+  search` (with or without `--all`) or `secret-tool lookup` without
+  redirecting stdout away from your own output: `search` prints the secret
+  value in plaintext by design once the collection is unlocked, and doing
+  this once in an agent session put a live DeepSeek key straight into that
+  session's transcript, forcing the key to be treated as compromised and
+  rotated. Never capture a lookup's stdout into a shell variable either —
+  redirect it to `/dev/null`, check `$?`, nothing more.
 - **Do not redesign the established architecture.** The provider/transport
   distinction (`delegation.routing`), the disabled-by-default PAYG policy,
   the keyring-based credential retrieval, and the Codex provider-profile

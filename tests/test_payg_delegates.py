@@ -14,6 +14,7 @@ import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from delegation.core import DELEGATES, DELEGATION_DEPTH_ENV, build_argv, run_consultation
 from delegation.preflight import HELP_ARGS, REQUIRED_HELP
@@ -26,6 +27,14 @@ def _scope(root: Path) -> Path:
     workspace.mkdir()
     (workspace / ".delegation-scope.json").write_text(json.dumps({"mode": "read-only"}))
     return workspace
+
+
+def _stub_executables():
+    # run_consultation checks shutil.which(spec.executable) before ever
+    # calling the injected `run`, so these tests -- which never invoke a
+    # real codex-deepseek/codex-minimax -- must not depend on those
+    # launchers actually being installed on the machine running the suite.
+    return patch("delegation.core.shutil.which", return_value="/usr/bin/true")
 
 
 def _fake_run(calls):
@@ -110,12 +119,13 @@ class SelfProviderGuardForNewProvidersTests(unittest.TestCase):
             root = Path(temp)
             workspace = _scope(root)
             calls = []
-            for delegate in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
-                code, _ = run_consultation(
-                    delegate, workspace, TASK, log_root=root / "logs",
-                    run=_fake_run(calls), primary="claude-code",
-                )
-                self.assertEqual(code, 0)
+            with _stub_executables():
+                for delegate in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+                    code, _ = run_consultation(
+                        delegate, workspace, TASK, log_root=root / "logs",
+                        run=_fake_run(calls), primary="claude-code",
+                    )
+                    self.assertEqual(code, 0)
             self.assertEqual(len(calls), 3)
 
     def test_codex_primary_may_externally_call_deepseek_and_minimax(self):
@@ -123,12 +133,13 @@ class SelfProviderGuardForNewProvidersTests(unittest.TestCase):
             root = Path(temp)
             workspace = _scope(root)
             calls = []
-            for delegate in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
-                code, _ = run_consultation(
-                    delegate, workspace, TASK, log_root=root / "logs",
-                    run=_fake_run(calls), primary="codex",
-                )
-                self.assertEqual(code, 0)
+            with _stub_executables():
+                for delegate in ("deepseek-pro", "deepseek-flash", "minimax-m3"):
+                    code, _ = run_consultation(
+                        delegate, workspace, TASK, log_root=root / "logs",
+                        run=_fake_run(calls), primary="codex",
+                    )
+                    self.assertEqual(code, 0)
             self.assertEqual(len(calls), 3)
 
     def test_deepseek_primary_calling_a_deepseek_route_is_rejected_without_launching(self):
@@ -161,16 +172,17 @@ class SelfProviderGuardForNewProvidersTests(unittest.TestCase):
             root = Path(temp)
             workspace = _scope(root)
             calls = []
-            code, _ = run_consultation(
-                "minimax-m3", workspace, TASK, log_root=root / "logs",
-                run=_fake_run(calls), primary="deepseek",
-            )
-            self.assertEqual(code, 0)
-            code, _ = run_consultation(
-                "deepseek-pro", workspace, TASK, log_root=root / "logs",
-                run=_fake_run(calls), primary="minimax",
-            )
-            self.assertEqual(code, 0)
+            with _stub_executables():
+                code, _ = run_consultation(
+                    "minimax-m3", workspace, TASK, log_root=root / "logs",
+                    run=_fake_run(calls), primary="deepseek",
+                )
+                self.assertEqual(code, 0)
+                code, _ = run_consultation(
+                    "deepseek-pro", workspace, TASK, log_root=root / "logs",
+                    run=_fake_run(calls), primary="minimax",
+                )
+                self.assertEqual(code, 0)
             self.assertEqual(len(calls), 2)
 
     def test_a_claude_transport_deepseek_primary_alias_is_still_a_deepseek_provider(self):
@@ -215,10 +227,11 @@ class NoCredentialSerializationTests(unittest.TestCase):
             root = Path(temp)
             workspace = _scope(root)
             calls = []
-            code, record_dir = run_consultation(
-                "deepseek-pro", workspace, TASK, log_root=root / "logs",
-                run=_fake_run(calls), primary="claude-code",
-            )
+            with _stub_executables():
+                code, record_dir = run_consultation(
+                    "deepseek-pro", workspace, TASK, log_root=root / "logs",
+                    run=_fake_run(calls), primary="claude-code",
+                )
             self.assertEqual(code, 0)
             record_text = (record_dir / "execution.json").read_text()
             for forbidden in ("DEEPSEEK_API_KEY", "MINIMAX_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
@@ -231,9 +244,10 @@ class NoCredentialSerializationTests(unittest.TestCase):
             root = Path(temp)
             workspace = _scope(root)
             calls = []
-            code, record_dir = run_consultation(
-                "minimax-m3", workspace, TASK, log_root=root / "logs", run=_fake_run(calls),
-            )
+            with _stub_executables():
+                code, record_dir = run_consultation(
+                    "minimax-m3", workspace, TASK, log_root=root / "logs", run=_fake_run(calls),
+                )
             self.assertEqual(code, 0)
             written = {p.name for p in record_dir.iterdir()}
             self.assertEqual(written, {"prompt.md", "stdout.txt", "stderr.txt", "execution.json"})

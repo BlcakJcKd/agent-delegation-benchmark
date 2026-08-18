@@ -201,19 +201,34 @@ machine likely already has the fix below applied — don't reapply it
 blindly, and don't assume every machine needs the same steps as this one
 did.
 
-The fix confirmed to work on this project's machine was to enable Ubuntu's
+The fix confirmed to work on this project's machines was to enable Ubuntu's
 own packaged, application-specific profile (scoped to `bwrap`, not a
-blanket userns policy change) rather than loosen the sysctl:
+blanket userns policy change) rather than loosen the sysctl. The packaged
+profile source, `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict`,
+ships in the `apparmor-profiles` package — not the base `apparmor` package,
+which can already be installed and current without it. Check the source
+exists before assuming the `ln`/`apparmor_parser` step below is all that's
+needed:
+
+```bash
+test -e /usr/share/apparmor/extra-profiles/bwrap-userns-restrict \
+  || sudo apt install apparmor-profiles apparmor-utils
+```
+
+Only once that path exists, link and load it — each command must actually
+succeed before the next runs (`&&`, not separate lines you eyeball), so a
+failed install or link can't be mistaken for a completed fix:
 
 ```bash
 sudo ln -s /usr/share/apparmor/extra-profiles/bwrap-userns-restrict \
-  /etc/apparmor.d/bwrap-userns-restrict
-sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+  /etc/apparmor.d/bwrap-userns-restrict \
+  && sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict \
+  && echo "profile loaded"
 ```
 
 Then re-run the smoke test above and confirm no fresh `DENIED` entries
 appear in `journalctl -k` for the test's timeframe. On this project's
-machine, after loading the profile, `aa-status` lists both `bwrap` and
+machines, after loading the profile, `aa-status` lists both `bwrap` and
 `unpriv_bwrap` among the loaded profiles, and the smoke test above exits 0.
 
 Do **not** work around this by setting
