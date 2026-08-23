@@ -16,6 +16,52 @@ discovery/judgement layer — it teaches when and how, not safety mechanics.
 All enforcement (recursion prevention, scope validation, the self-provider
 guard) lives in the installed code, not here.
 
+## Canonical external-consultation workflow
+
+Use this sequence for every external consultation:
+
+1. Check effective availability without making a model call:
+
+   ```bash
+   delegate-status --primary codex
+   # or, for Claude Code:
+   delegate-status --primary claude-code
+   ```
+
+2. Choose only routes reported as `available`. Same-provider routes are
+   `native-only`; disabled or missing-executable routes are not substitutes.
+3. Prepare the minimum necessary scoped workspace and its read-only marker.
+4. Invoke the installed wrapper and capture its stdout and stderr:
+
+   ```bash
+   ask-flash --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary codex
+   ask-deepseek-flash --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary codex
+   ask-deepseek-pro --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary codex
+   ask-minimax-m3 --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary codex
+   ```
+
+5. Read the textual consultation returned on stdout. This is the normal
+   result channel. Do not wait for or search for a review file unless the task
+   specifically asked the delegate to create one; delegates are not required
+   to create files.
+6. Extract useful findings, verify them against primary evidence, and
+   integrate only verified conclusions.
+7. If multiple delegates were used, record material agreement, disagreement,
+   and unique useful findings. Do not invent disagreement when none was
+   returned.
+
+The wrapper exits 0 only for a textual consultation result. A delegate process
+that exits 0 with blank stdout is surfaced as a model/response failure. A
+meaningful textual response such as “nothing material to add” is a valid
+no-addition result. The response is also retained in the audit run directory
+as `stdout.txt`; `stderr.txt` contains diagnostics and `execution.json`
+contains status and exit metadata. The evidence summary is on wrapper stderr,
+so it does not contaminate the consultation stdout stream.
+
 ## Defaults
 
 - Delegation is allowed by default unless the user says otherwise for this
@@ -84,7 +130,15 @@ expensive to independently verify.
 ask-flash  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ask-haiku  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ask-sonnet --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
+ask-deepseek-flash --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
+ask-deepseek-pro --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
+ask-minimax-m3 --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ```
+
+Capture both streams. The delegate's consultation is returned on stdout; the
+wrapper's evidence path and diagnostics are on stderr. The response itself is
+the primary output. Do not confuse the audit path or absence of a generated
+review file with the consultation result.
 
 ## Optional experimental PAYG delegates
 
@@ -128,12 +182,44 @@ supported mode — no wrapper here grants write access.
 
 ## After a delegate responds
 
-Treat every claim as a hypothesis, not a fact. Read the cited file:line
-evidence yourself, re-run any verification command it proposes if safe, and
-only act once you've independently confirmed it. Logs land under the
-installed state directory (`delegate-status` shows the path) as
-`prompt.md`/`stdout.txt`/`stderr.txt`/`execution.json` — plain files, read
-them like any other.
+Treat every claim as a hypothesis, not a fact. Read the returned stdout first,
+then read the cited file:line evidence yourself, re-run any verification
+command it proposes if safe, and only act once you've independently confirmed
+it. Logs land under the installed state directory (`delegate-status` shows the
+path) as `prompt.md`/`stdout.txt`/`stderr.txt`/`execution.json` — plain files,
+read them like any other. The files are an audit backup, not a required
+delegate deliverable.
+
+## Failure diagnosis and bounded recovery
+
+If an `ask-*` command fails, inspect its exit status, stderr, evidence path,
+`execution.json`, route status, and scope declaration before classifying it.
+Classify the cause as one of: availability/config, scope/sandbox,
+recursion/provider guard, launcher/executable, authentication,
+provider/API/transport, wrapper/runtime, or model/response. A non-zero exit is
+not a model-quality score, and a missing review file is not evidence of any
+failure. Never report a delegate as “non-functional” without the underlying
+diagnosis.
+
+If the cause is safe, local, bounded infrastructure within the task scope,
+repair that cause and retry at most once. Never use a blind retry loop or
+silently substitute another provider. If no safe repair is possible, report
+the exact blocker and continue with the primary task where possible. Do not
+expose secrets while inspecting diagnostics.
+
+Delegation is complete only when each requested external route is accounted
+for as one of:
+
+- **Success:** textual response returned, inspected, and useful findings
+  integrated or explicitly rejected after verification.
+- **Valid no-addition:** the delegate explicitly returned a meaningful
+  statement that it had nothing material to add.
+- **Diagnosed infrastructure failure:** the exact failure category and reason
+  are known.
+- **Diagnosed model/response failure:** the provider completed, but its
+  response was empty, malformed, or unusable.
+
+An ambiguous “no usable textual review records” state is not completion.
 
 ## Recursion is prohibited
 

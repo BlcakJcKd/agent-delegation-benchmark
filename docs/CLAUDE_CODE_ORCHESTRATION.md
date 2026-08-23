@@ -90,15 +90,22 @@ project, once installed.)
 decision. `--primary` is a separate, distinct mechanism — see "Two distinct
 guards" below.
 
-## Inspecting logs and results
+## Inspecting results and logs
+
+The command's stdout is the delegate's textual consultation and is the first
+thing the primary must capture and read. Do not wait for a generated review
+file: the delegate is not required to create one. The audit directory is a
+backup and diagnosis record, not the normal response channel.
 
 Each call writes a timestamped directory under `delegate_runs/` (or
 `--log-root`), outside the consulted workspace:
 
 - `prompt.md` — exact prompt sent
-- `stdout.txt` / `stderr.txt` — raw CLI output
+- `stdout.txt` / `stderr.txt` — raw delegate output (the response is replayed
+  on wrapper stdout; wrapper metadata and diagnostics are on stderr)
 - `execution.json` — delegate, caller, requested model/effort, workspace,
-  timing, exit code, redacted argv, and whether the call timed out
+  timing, exit code, response status, redacted argv, and whether the call timed
+  out
 
 Read these with the `Read` tool like any other file; nothing about them
 requires special handling.
@@ -146,7 +153,7 @@ Claude Code (primary)
   -> delegate-status --primary claude-code (zero model calls; check eligibility)
   -> prepare scoped copy (no symlinks, .delegation-scope.json present)
   -> ask-flash --workspace <scoped-copy> --prompt-file <task.md> --caller claude-code --primary claude-code
-  -> inspect <state-log-dir>/delegate_runs/<timestamp>-flash-*/execution.json + stdout.txt
+  -> capture/read ask-flash stdout (audit backup: <state-log-dir>/delegate_runs/<timestamp>-flash-*/stdout.txt)
   -> independently verify every cited file:line claim
   -> decide whether to act, and act directly (Flash has no write access)
 ```

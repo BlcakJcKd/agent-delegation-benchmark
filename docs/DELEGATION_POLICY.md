@@ -19,6 +19,71 @@ final answer. Delegation is optional: use it only when independent reasoning,
 parallelism, specialist experience, or quota preservation outweighs its
 context/latency cost.
 
+## Canonical result contract
+
+The `ask-*` invocation itself is the consultation channel. On a successful
+call, the wrapper exits 0 and returns the delegate's textual response on
+stdout. The same response is retained as `stdout.txt` in the audit run
+directory; `stderr` carries launcher/provider diagnostics and the evidence
+summary, while `execution.json` records exit and response metadata. The
+primary must capture and read stdout before claiming the consultation is
+complete. A delegate does not need to create a review file, and the absence of
+one is not a failure signal.
+
+The only valid empty-looking outcome is a meaningful textual response that
+explicitly says there is nothing material to add. Blank stdout after a zero
+exit is a model/response failure. A non-zero exit requires diagnosis from
+stderr, `execution.json`, route status, and scope evidence; it is not by
+itself a model-quality result.
+
+## External delegation procedure
+
+```text
+delegate-status --primary codex       (or --primary claude-code)
+  -> select only effectively available external routes
+  -> prepare minimum scoped read-only context
+  -> invoke ask-* and capture/read textual stdout
+  -> verify findings against primary evidence
+  -> record material agreement/disagreement across delegates
+  -> integrate only verified conclusions
+```
+
+Same-provider work uses the host's native agents. Do not externally call the
+same provider to simulate a native subagent. Availability is machine-local and
+user-owned; always inspect `delegate-status` rather than assuming a route is
+enabled. The evidence-guided routing guidance below remains unchanged: Flash
+is useful subscription/quota capacity, DeepSeek V4 Flash is the preferred
+tested general PAYG route when enabled, DeepSeek V4 Pro is for genuinely
+difficult bounded work, and MiniMax M3 is a provider-diverse alternative.
+
+## Prompt-author block
+
+Copy this compact block into a Codex or Claude prompt when delegation is part
+of the task:
+
+```text
+DELEGATION
+
+Check:
+    delegate-status --primary codex
+or:
+    delegate-status --primary claude-code
+
+Cross-provider:
+    ask-flash
+    ask-deepseek-flash
+    ask-deepseek-pro
+    ask-minimax-m3
+
+For each external delegate:
+    invoke wrapper; capture/read textual response; verify findings;
+    record material disagreement; integrate only verified conclusions.
+
+Do not interpret absence of a generated file as absence of a consultation.
+Diagnose wrapper/provider/sandbox/auth failures before labelling a model
+non-functional. Same-provider work uses native agents.
+```
+
 ## Evidence-based routing
 
 | Delegate | Good initial uses | Escalate / keep with primary when |

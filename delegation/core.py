@@ -301,6 +301,7 @@ def run_consultation(
         "timeout_seconds": timeout_seconds,
         "timed_out": timed_out,
         "exit_code": exit_code,
+        "response_status": "text-returned" if stdout.strip() else "empty-response",
         "argv": argv[:-1] + ["<PROMPT>"],
         "prompt_file": "prompt.md",
         "stdout_file": "stdout.txt",

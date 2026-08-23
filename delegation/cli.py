@@ -10,6 +10,7 @@ types it (see ``ask_flash_main`` etc.).
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from .core import DELEGATES, DEFAULT_TIMEOUT_SECONDS, run_consultation
@@ -54,9 +55,34 @@ def main(argv: list[str] | None = None, *, fixed_delegate: str | None = None) ->
             caller=args.caller, primary=args.primary,
         )
     except (OSError, RuntimeError, ValueError) as exc:
+        # Preserve the established validation/setup error channel for existing
+        # CLI consumers. Successful consultations use stdout exclusively for
+        # the delegate result; these errors have no consultation result.
         print(f"delegation error: {exc}")
         return 2
-    print(f"Delegate: {delegate}\nExit: {code}\nEvidence: {record_dir}")
+
+    # stdout is the consultation result channel.  The delegate's raw result
+    # is already persisted as stdout.txt; replay it unchanged so callers do
+    # not need to discover or parse an audit directory just to consume a
+    # successful response.  Keep operational metadata and diagnostics on
+    # stderr so existing human-readable evidence remains available without
+    # contaminating the result stream.
+    result = (record_dir / "stdout.txt").read_text()
+    diagnostics = (record_dir / "stderr.txt").read_text()
+    if result:
+        sys.stdout.write(result)
+    if diagnostics:
+        sys.stderr.write(diagnostics)
+        if not diagnostics.endswith("\n"):
+            sys.stderr.write("\n")
+    print(f"Delegate: {delegate}\nExit: {code}\nEvidence: {record_dir}", file=sys.stderr)
+    if code == 0 and not result.strip():
+        print(
+            "delegation response error: delegate exited 0 but returned no textual consultation; "
+            "classify as model/response failure",
+            file=sys.stderr,
+        )
+        return 3
     return code
 
 
