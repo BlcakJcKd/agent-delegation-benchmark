@@ -221,6 +221,29 @@ for as one of:
 
 An ambiguous “no usable textual review records” state is not completion.
 
+## Timeout and cancellation semantics
+
+The default `ask-*` timeout is 300 seconds. If a shorter operational bound is
+needed, pass it explicitly, for example:
+
+```bash
+ask-haiku --workspace /absolute/scoped-copy \
+  --prompt-file /absolute/task.md --primary codex --timeout 90
+```
+
+Do not infer a timeout merely because `stdout.txt` or `execution.json` has not
+appeared while the command is still running. Those audit files are finalized
+after the delegate subprocess returns or after the wrapper catches its own
+timeout; they are not a live-progress indicator. A genuine wrapper timeout is
+recorded as exit code `124` with `timed_out: true` and finalized audit files.
+
+If a parent agent, shell supervisor, or operator manually kills the wrapper
+before that point, the run may have no finalized audit record. Classify that as
+an externally terminated/incomplete infrastructure run, not as a wrapper
+timeout or model failure. Do not terminate a healthy wrapper solely because
+its audit files are still absent; either wait for the configured bound or set
+the bound explicitly before invoking it.
+
 ## Recursion is prohibited
 
 An approved wrapper (`ask-flash`/`ask-haiku`/`ask-sonnet`) refuses to run
