@@ -15,9 +15,10 @@ while a real OpenAI-Codex-to-Codex or Claude-to-Claude call is rejected.
 
 Only routes with an external wrapper (sonnet, haiku, flash, deepseek-pro,
 deepseek-flash, minimax-m3) can ever be invoked through this package's
-``ask-*`` commands; terra and luna are Codex-native routes with no external
-wrapper anywhere in this codebase, and none is added here -- see
-docs/DELEGATION_POLICY.md.
+Terra and Luna have external wrappers for non-Codex primaries, but are
+same-provider/native-only for a Codex primary. This lets Claude Code and other
+non-Codex primaries consult Codex through the normal Codex subscription path
+without allowing a Codex primary to recursively launch another Codex CLI.
 
 This module does not enforce anything by itself; it is a small, dependency-
 free lookup table shared by ``delegation.core`` (the self-provider guard) and
@@ -44,10 +45,9 @@ ROUTE_PROVIDER: dict[str, str] = {
     "minimax-m3": "minimax",
 }
 
-# Executable an external wrapper would invoke for a route, or None if the
-# route has no external wrapper at all -- always native-only, regardless of
-# the declared primary. Terra/Luna intentionally have no external wrapper:
-# recursively invoking `codex exec` from a wrapper is not adopted here.
+# Executable an external wrapper invokes for a route. A same-provider primary
+# is still classified as native-only by route_type(), so a Codex primary cannot
+# use these Codex transport wrappers to recursively launch another Codex CLI.
 #
 # deepseek-pro/deepseek-flash use the `codex-deepseek` launcher and
 # minimax-m3 uses `codex-minimax` -- pre-existing, independently verified
@@ -56,8 +56,8 @@ ROUTE_PROVIDER: dict[str, str] = {
 # the login keyring. They are Codex-CLI *transport*, not the `codex` route's
 # own OpenAI provider.
 ROUTE_EXECUTABLE: dict[str, str | None] = {
-    "terra": None,
-    "luna": None,
+    "terra": "codex",
+    "luna": "codex",
     "sonnet": "claude",
     "haiku": "claude",
     "flash": "agy",
@@ -71,8 +71,7 @@ ROUTE_EXECUTABLE: dict[str, str | None] = {
 # share a transport while hitting different providers (deepseek-pro and
 # minimax-m3 both run through the "codex" transport but reach different
 # providers), and one provider can be reached through more than one
-# transport in principle. Native-only routes (terra, luna) use their own
-# primary runtime directly, so their transport is the provider itself.
+# transport in principle.
 ROUTE_TRANSPORT: dict[str, str] = {
     "terra": "codex",
     "luna": "codex",

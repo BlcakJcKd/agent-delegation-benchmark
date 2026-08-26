@@ -4,7 +4,10 @@ Operational reference for how `delegation/core.py` behaves when something
 goes wrong. Same principle as the benchmark itself (see
 [AGENT_BENCHMARK_HANDBOOK.md](AGENT_BENCHMARK_HANDBOOK.md) §7): **an
 infrastructure failure is not a model failure.** None of the classes below
-should be read as evidence about Flash, Haiku, or Sonnet's capability.
+should be read as evidence about Terra, Luna, Flash, Haiku, or Sonnet's
+capability. Terra/Luna use the normal OpenAI/Codex CLI subscription path for
+non-Codex primaries; a Codex primary is rejected by the same-provider guard
+and should use native Codex agents.
 
 Validated in [`tests/test_delegation_failure_modes.py`](../tests/test_delegation_failure_modes.py),
 [`test_delegation.py`](../tests/test_delegation.py), and

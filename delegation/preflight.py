@@ -15,6 +15,8 @@ REQUIRED_HELP: dict[str, tuple[str, ...]] = {
     "flash": ("--mode", "plan", "--sandbox", "--model", "--effort", "--print"),
     "haiku": ("--permission-mode", "plan", "--tools", "--allowedTools", "--safe-mode", "--effort", "--print"),
     "sonnet": ("--permission-mode", "plan", "--tools", "--allowedTools", "--safe-mode", "--effort", "--print"),
+    "terra": ("--sandbox", "read-only", "--model", "--config", "--ephemeral", "--cd"),
+    "luna": ("--sandbox", "read-only", "--model", "--config", "--ephemeral", "--cd"),
     "deepseek-pro": ("--sandbox", "read-only", "--model", "--json", "--ephemeral", "--cd"),
     "deepseek-flash": ("--sandbox", "read-only", "--model", "--json", "--ephemeral", "--cd"),
     "minimax-m3": ("--sandbox", "read-only", "--model", "--json", "--ephemeral", "--cd"),
@@ -25,6 +27,8 @@ REQUIRED_HELP: dict[str, tuple[str, ...]] = {
 # read-only/sandbox/model flags under `exec --help`, not the top-level
 # `--help`; every other delegate's wrapper CLI documents them at top level.
 HELP_ARGS: dict[str, tuple[str, ...]] = {
+    "terra": ("exec", "--help"),
+    "luna": ("exec", "--help"),
     "deepseek-pro": ("exec", "--help"),
     "deepseek-flash": ("exec", "--help"),
     "minimax-m3": ("exec", "--help"),
@@ -64,6 +68,15 @@ def check(delegates: list[str] | None = None) -> dict[str, object]:
     if "flash" in selected and shutil.which("agy"):
         code, models = _capture(["agy", "models"])
         checks.append({"name": "flash: requested model", "ok": code == 0 and DELEGATES["flash"].model in models, "detail": DELEGATES["flash"].model})
+    if any(name in selected for name in ("terra", "luna")) and shutil.which("codex"):
+        code, models = _capture(["codex", "debug", "models"])
+        for name in ("terra", "luna"):
+            if name in selected:
+                checks.append({
+                    "name": name + ": requested model",
+                    "ok": code == 0 and DELEGATES[name].model in models,
+                    "detail": DELEGATES[name].model,
+                })
     return {"ok": all(bool(item["ok"]) for item in checks), "checks": checks}
 
 

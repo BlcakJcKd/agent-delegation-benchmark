@@ -96,6 +96,8 @@ class CanonicalGuidanceTests(unittest.TestCase):
         for required in (
             "delegate-status --primary codex",
             "ask-flash",
+            "ask-terra",
+            "ask-luna",
             "ask-deepseek-flash",
             "ask-deepseek-pro",
             "ask-minimax-m3",
@@ -108,6 +110,9 @@ class CanonicalGuidanceTests(unittest.TestCase):
             "availability/config",
             "model/response",
             "no usable textual review records",
+            "SAME-PROVIDER WORK USES NATIVE AGENTS",
+            "Codex/OpenAI primary",
+            "Claude Code/Anthropic primary",
         ):
             self.assertIn(required, skill)
 
@@ -116,6 +121,9 @@ class CanonicalGuidanceTests(unittest.TestCase):
         self.assertIn("## Prompt-author block", policy)
         self.assertIn("Do not interpret absence of a generated file", policy)
         self.assertIn("Same-provider work uses native agents", policy)
+        self.assertIn("Codex -> native Codex agents for Terra/Luna", policy)
+        self.assertIn("Claude -> native Claude subagents for Sonnet/Haiku", policy)
+        self.assertIn("Genuine timeout = exit 124 + timed_out:true", policy)
 
 
 if __name__ == "__main__":

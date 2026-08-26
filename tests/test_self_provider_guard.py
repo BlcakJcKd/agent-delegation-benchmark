@@ -13,6 +13,7 @@ import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from delegation.core import run_consultation
 
@@ -56,6 +57,36 @@ class SelfProviderGuardTests(unittest.TestCase):
                 )
             self.assertEqual(calls, [])
 
+    def test_claude_primary_can_call_terra_and_luna(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            calls = []
+            with patch("delegation.core.shutil.which", return_value="/usr/bin/codex"):
+                for delegate in ("terra", "luna"):
+                    code, record_dir = run_consultation(
+                        delegate, workspace, TASK, log_root=root / delegate,
+                        run=self._fake_run(calls), primary="claude-code",
+                    )
+                    self.assertEqual(code, 0)
+                    record = json.loads((record_dir / "execution.json").read_text())
+                    self.assertEqual(record["provider"], "codex")
+                    self.assertEqual(record["transport"], "codex")
+            self.assertEqual(len(calls), 2)
+
+    def test_codex_primary_calling_terra_or_luna_is_rejected_without_launching(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = self._scope(root)
+            for delegate in ("terra", "luna"):
+                calls = []
+                with self.assertRaisesRegex(ValueError, "same-provider external delegation disabled"):
+                    run_consultation(
+                        delegate, workspace, TASK, log_root=root / delegate,
+                        run=self._fake_run(calls), primary="codex",
+                    )
+                self.assertEqual(calls, [])
+
     def test_claude_primary_calling_flash_is_allowed(self):
         with TemporaryDirectory() as temp:
             root = Path(temp)
@@ -95,7 +126,7 @@ class SelfProviderGuardTests(unittest.TestCase):
                 self.assertEqual(code, 0)
             self.assertEqual(len(calls), 2)
 
-    def test_codex_primary_may_use_any_external_route_codex_has_no_wrapper(self):
+    def test_codex_primary_may_use_any_external_non_codex_route(self):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             workspace = self._scope(root)

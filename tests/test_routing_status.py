@@ -41,10 +41,11 @@ class NormalizePrimaryTests(unittest.TestCase):
 
 
 class RouteTypeTests(unittest.TestCase):
-    def test_terra_and_luna_are_always_native_only(self):
-        for primary in (None, "codex", "claude", "gemini", "manual"):
-            self.assertEqual(route_type("terra", primary), "native-only")
-            self.assertEqual(route_type("luna", primary), "native-only")
+    def test_terra_and_luna_are_native_only_only_for_codex_primary(self):
+        for primary in ("terra", "luna"):
+            self.assertEqual(route_type(primary, "codex"), "same-provider")
+            for other_primary in (None, "claude", "gemini", "manual"):
+                self.assertEqual(route_type(primary, other_primary), "external")
 
     def test_wrapper_routes_are_external_for_a_different_or_undeclared_primary(self):
         self.assertEqual(route_type("flash", None), "external")
@@ -52,11 +53,15 @@ class RouteTypeTests(unittest.TestCase):
         self.assertEqual(route_type("flash", "codex"), "external")
         self.assertEqual(route_type("haiku", "codex"), "external")
         self.assertEqual(route_type("sonnet", "gemini"), "external")
+        self.assertEqual(route_type("terra", "claude"), "external")
+        self.assertEqual(route_type("luna", "claude"), "external")
 
     def test_wrapper_routes_are_same_provider_for_a_matching_primary(self):
         self.assertEqual(route_type("haiku", "claude"), "same-provider")
         self.assertEqual(route_type("sonnet", "claude"), "same-provider")
         self.assertEqual(route_type("flash", "gemini"), "same-provider")
+        self.assertEqual(route_type("terra", "codex"), "same-provider")
+        self.assertEqual(route_type("luna", "codex"), "same-provider")
 
     def test_manual_primary_never_produces_same_provider(self):
         self.assertEqual(route_type("flash", "manual"), "external")
@@ -100,7 +105,7 @@ class ComputeStatusTests(unittest.TestCase):
         # only wrapper executables probed -- every route with an external
         # wrapper, enabled or not, since "enabled" is a separate axis from
         # "is the wrapper on this machine".
-        self.assertEqual(set(calls), {"claude", "agy", "codex-deepseek", "codex-minimax"})
+        self.assertEqual(set(calls), {"claude", "agy", "codex", "codex-deepseek", "codex-minimax"})
 
     def test_enabled_external_route_with_executable_present_is_available(self):
         results = {r.route: r for r in compute_status(default_config(), primary=None, which=self._which_all_present)}
@@ -118,10 +123,17 @@ class ComputeStatusTests(unittest.TestCase):
         self.assertEqual(results["sonnet"].effective, "native-only")
         self.assertEqual(results["flash"].effective, "available")  # gemini != claude primary
 
-    def test_native_only_routes_report_native_only_when_enabled(self):
+    def test_codex_routes_are_external_for_claude_primary(self):
         results = {r.route: r for r in compute_status(default_config(), primary="claude-code", which=self._which_all_present)}
-        self.assertEqual(results["terra"].effective, "native-only")
-        self.assertEqual(results["luna"].effective, "native-only")
+        for route in ("terra", "luna"):
+            self.assertEqual(results[route].effective, "available")
+            self.assertEqual(results[route].route_type, "external")
+
+    def test_codex_routes_are_native_only_for_codex_primary(self):
+        results = {r.route: r for r in compute_status(default_config(), primary="codex", which=self._which_all_present)}
+        for route in ("terra", "luna"):
+            self.assertEqual(results[route].effective, "native-only")
+            self.assertEqual(results[route].route_type, "same-provider")
 
     def test_provider_disable_overrides_individual_model_enabled_preference(self):
         config = set_enabled(default_config(), "providers", "codex", False, reason="weekly quota low")
@@ -135,8 +147,8 @@ class ComputeStatusTests(unittest.TestCase):
         config = set_enabled(default_config(), "providers", "codex", False, reason="quota low")
         config = set_enabled(config, "providers", "codex", True)
         results = {r.route: r for r in compute_status(config, primary=None, which=self._which_all_present)}
-        self.assertEqual(results["terra"].effective, "native-only")
-        self.assertEqual(results["luna"].effective, "native-only")
+        self.assertEqual(results["terra"].effective, "available")
+        self.assertEqual(results["luna"].effective, "available")
 
     def test_model_disabled_reason_used_when_provider_enabled(self):
         config = set_enabled(default_config(), "models", "flash", False, reason="testing")

@@ -36,6 +36,29 @@ exit is a model/response failure. A non-zero exit requires diagnosis from
 stderr, `execution.json`, route status, and scope evidence; it is not by
 itself a model-quality result.
 
+## SAME-PROVIDER WORK USES NATIVE AGENTS
+
+This is an explicit routing invariant:
+
+- A Codex/OpenAI primary uses native Codex agents for Terra/Luna. It must not
+  use `ask-terra` or `ask-luna` merely to recursively launch another Codex
+  process.
+- A Claude Code/Anthropic primary uses native Claude subagents for
+  Sonnet/Haiku. It must not use `ask-sonnet` or `ask-haiku` merely to
+  recursively launch another Claude process.
+- Claude Code -> `ask-terra`/`ask-luna` is valid cross-provider delegation.
+  Codex -> `ask-sonnet`/`ask-haiku` is valid cross-provider delegation.
+- Gemini same-provider native-agent protections remain in force: a Gemini
+  primary uses native Gemini agents where supported, not `ask-flash` merely to
+  call Gemini again.
+
+The native rule avoids recursive CLI orchestration, preserves host-native
+agent supervision, avoids unnecessary context/process overhead, and keeps
+provider-recursion semantics clean. `delegate-status --primary codex` shows
+Terra/Luna as `native-only`; `delegate-status --primary claude-code` shows
+enabled Terra/Luna as external/available when Codex is configured and on
+PATH. Claude's Sonnet/Haiku are correspondingly `native-only`.
+
 ## External delegation procedure
 
 ```text
@@ -48,7 +71,8 @@ delegate-status --primary codex       (or --primary claude-code)
   -> integrate only verified conclusions
 ```
 
-Same-provider work uses the host's native agents. Do not externally call the
+Same-provider work uses native agents. Same-provider work uses the host's
+native agents. Do not externally call the
 same provider to simulate a native subagent. Availability is machine-local and
 user-owned; always inspect `delegate-status` rather than assuming a route is
 enabled. The evidence-guided routing guidance below remains unchanged: Flash
@@ -69,19 +93,34 @@ Check:
 or:
     delegate-status --primary claude-code
 
-Cross-provider:
+Cross-provider wrappers:
+    ask-terra
+    ask-luna
+    ask-sonnet
+    ask-haiku
     ask-flash
     ask-deepseek-flash
     ask-deepseek-pro
     ask-minimax-m3
 
-For each external delegate:
-    invoke wrapper; capture/read textual response; verify findings;
-    record material disagreement; integrate only verified conclusions.
+SAME-PROVIDER:
+    Codex -> native Codex agents for Terra/Luna
+    Claude -> native Claude subagents for Sonnet/Haiku
 
+Only use an ask-* wrapper when the target is genuinely cross-provider for the
+current primary.
+
+For each external delegate:
+    invoke wrapper; allow it to run until its declared timeout; capture/read
+    textual stdout; verify findings; reconcile disagreement; integrate only
+    verified conclusions.
+
+Do not expect a generated review file.
 Do not interpret absence of a generated file as absence of a consultation.
-Diagnose wrapper/provider/sandbox/auth failures before labelling a model
-non-functional. Same-provider work uses native agents.
+Do not kill a delegate merely because it is quiet.
+Genuine timeout = exit 124 + timed_out:true.
+Diagnose infrastructure/provider/model failures before labelling a delegate
+non-functional.
 ```
 
 ## Evidence-based routing
@@ -158,10 +197,11 @@ actual files.
 ## Operational wrappers
 
 Two equivalent interfaces invoke the same `delegation` package: the
-development wrappers `bin/ask-flash`, `bin/ask-haiku`, `bin/ask-sonnet`
+development wrappers `bin/ask-terra`, `bin/ask-luna`, `bin/ask-flash`,
+`bin/ask-haiku`, `bin/ask-sonnet`
 (`python -m delegation.cli <name>`, working directly from a checkout), and
-the installed, cross-project commands `ask-flash`/`ask-haiku`/`ask-sonnet`
-produced by `scripts/install-user-delegation.sh` (see
+the installed, cross-project commands `ask-terra`/`ask-luna`/`ask-flash`/
+`ask-haiku`/`ask-sonnet` produced by `scripts/install-user-delegation.sh` (see
 [USER_INSTALLATION.md](USER_INSTALLATION.md)). Both implement consultation
 only. Both require a dedicated workspace containing `.delegation-scope.json`
 with:
@@ -209,8 +249,9 @@ The read-only mechanisms are intentionally narrow:
 - Haiku/Sonnet: Claude `--safe-mode --permission-mode plan`, with both the
   available-tools and pre-approved tool sets restricted to `Read,Glob,Grep`.
   No `Write`, `Edit`, or `Bash` is offered.
-- Codex is not wrapped recursively. A reference argv in `delegation.core`
-  demonstrates `codex exec --sandbox read-only` for a future direct pathway.
+- Terra/Luna use the normal `codex exec --sandbox read-only` path for
+  non-Codex primaries; the self-provider guard blocks those wrappers for a
+  Codex primary, which must use native agents.
 
 No wrapper uses `dangerously-skip-permissions`, `bypassPermissions`, broad
 `Bash`, `danger-full-access`, or automatic approval flags.
@@ -227,7 +268,7 @@ also remain product-defined. Preserve least privilege by preparing the scoped
 copy before invoking either service.
 
 For Codex, prefer a native primary-runtime subagent/task facility when the
-active Codex surface provides one. The locally inspected `codex exec` 0.147.0
-help has no native subagent subcommand, so recursively starting another Codex
-CLI is not adopted here. Keep a depth-one architecture: a primary may ask a
-delegate; a delegate must never ask another delegate.
+active Codex surface provides one. Terra/Luna's external wrappers are for
+non-Codex primaries only; a Codex primary must not use them to recursively
+start another Codex CLI. Keep a depth-one architecture: a primary may ask a
+cross-provider delegate; a delegate must never ask another delegate.

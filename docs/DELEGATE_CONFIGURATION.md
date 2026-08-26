@@ -51,10 +51,13 @@ Every provider (`codex`, `claude`, `gemini`) and every model/route (`terra`,
 `luna`, `sonnet`, `haiku`, `flash`) supports `enabled` (required) and an
 optional `reason` string. A fresh install has everything enabled — meaning
 "eligible in principle," not "always externally invokable"; effective
-routing still depends on the declared primary, whether an external wrapper
-exists for that route at all, and whether the wrapper's executable is on
-PATH (see [CLAUDE_CODE_ORCHESTRATION.md](CLAUDE_CODE_ORCHESTRATION.md) for
-the native-vs-external distinction).
+routing still depends on the declared primary, whether the route's wrapper
+executable is on PATH, and the same-provider native-agent rule (see
+[CLAUDE_CODE_ORCHESTRATION.md](CLAUDE_CODE_ORCHESTRATION.md)). Terra/Luna
+pin `gpt-5.6-terra`/`gpt-5.6-luna` through the normal Codex subscription
+authentication path; they are external routes for non-Codex primaries and
+`native-only` for a Codex primary. Sonnet/Haiku have the reciprocal Claude
+native-only behavior.
 
 **Provider disable overrides individual model enable.** Disabling `codex`
 makes `terra` and `luna` unavailable even though their own `enabled` stays

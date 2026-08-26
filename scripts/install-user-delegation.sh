@@ -4,7 +4,8 @@
 # What this does, in order:
 #   1. no-model checks: the test suite and the no-model delegation preflight
 #   2. `pipx install --force` the `delegation` package from this checkout,
-#      producing ask-flash / ask-haiku / ask-sonnet / ask-deepseek-pro /
+#      producing ask-flash / ask-haiku / ask-sonnet / ask-terra / ask-luna /
+#      ask-deepseek-pro /
 #      ask-deepseek-flash / ask-minimax-m3 (experimental PAYG, disabled by
 #      default -- see docs/PAYG_DELEGATES.md) / delegate-status /
 #      delegate-config as commands independent of this repo's location
@@ -119,7 +120,7 @@ fi
 echo
 echo "== Done =="
 echo "Commands:"
-for cmd in ask-flash ask-haiku ask-sonnet ask-deepseek-pro ask-deepseek-flash ask-minimax-m3 delegate-status delegate-config; do
+for cmd in ask-flash ask-haiku ask-sonnet ask-terra ask-luna ask-deepseek-pro ask-deepseek-flash ask-minimax-m3 delegate-status delegate-config; do
   path="$(command -v "$cmd" 2>/dev/null || echo "NOT ON PATH")"
   echo "  $cmd: $path"
 done

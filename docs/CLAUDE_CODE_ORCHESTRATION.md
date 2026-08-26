@@ -1,7 +1,7 @@
 # Claude Code orchestration
 
 How Claude Code acts as primary owner of this repository and, when useful,
-consults Gemini 3.7 Flash through the approved `bin/ask-flash` wrapper. Read
+consults OpenAI/Codex Terra/Luna or Gemini Flash through approved wrappers. Read
 [DELEGATION_POLICY.md](DELEGATION_POLICY.md) first; this document is the
 Claude-Code-specific operational supplement, not a replacement for it.
 
@@ -16,9 +16,20 @@ the same way regardless of which agent's `Bash` tool runs them.
 
 This applies whether Claude Code is working inside this repository or in an
 entirely different project: once installed (see
-[USER_INSTALLATION.md](USER_INSTALLATION.md)), `ask-flash`,
+[USER_INSTALLATION.md](USER_INSTALLATION.md)), `ask-terra`, `ask-luna`,
+`ask-flash`,
 `delegate-status`, and `delegate-config` are ordinary commands on `PATH`,
 independent of this checkout.
+
+## Cross-provider routes and native Claude workers
+
+Claude Code may use `ask-terra` and `ask-luna` as external OpenAI/Codex
+consultation routes when `delegate-status --primary claude-code` reports them
+available. Sonnet and Haiku are Claude's same-provider workers: use native
+Claude subagents, and never use `ask-sonnet` or `ask-haiku` merely to launch
+another Claude process. Codex has the reciprocal rule: Terra/Luna are native
+Codex workers there, while `ask-sonnet`/`ask-haiku` are valid cross-provider
+routes.
 
 ## Gemini Flash is optional spare capacity, not mandatory
 
@@ -78,6 +89,14 @@ don't work around it or change it on your own judgement.
 ask-flash --workspace /absolute/scoped-copy \
   --prompt-file /absolute/consultation-task.md --timeout 300 \
   --caller claude-code --primary claude-code
+
+ask-terra --workspace /absolute/scoped-copy \
+  --prompt-file /absolute/consultation-task.md --timeout 300 \
+  --caller claude-code --primary claude-code
+
+ask-luna --workspace /absolute/scoped-copy \
+  --prompt-file /absolute/consultation-task.md --timeout 300 \
+  --caller claude-code --primary claude-code
 ```
 
 (`bin/ask-flash` inside this checkout is equivalent for development; the
@@ -122,7 +141,7 @@ Treat every claim Flash returns as a hypothesis, not a fact:
 ## Two distinct guards
 
 **Recursion-depth guard.** `primary -> delegate` is allowed.
-`delegate -> ask-flash/ask-haiku/ask-sonnet` is rejected by the wrapper
+`delegate -> ask-*` (including `ask-terra`/`ask-luna`) is rejected by the wrapper
 itself: `run_consultation` checks the inherited `AGENT_DELEGATION_DEPTH`
 environment marker and refuses to proceed (no subprocess is launched) if it
 is already present and >= 1, including a malformed value. Every spawned
@@ -145,6 +164,11 @@ never assumed). The Python runtime cannot detect or prevent a host from
 using its own native agent feature; it can only refuse to be misused as a
 same-provider external hop. `AGENT_DELEGATION_DEPTH` and `--primary` are
 independent — either can reject a call regardless of the other's state.
+
+The same guard rejects `ask-terra`/`ask-luna --primary codex`. That is
+intentional: `delegate-status --primary codex` reports both as `native-only`,
+while Claude Code sees them as external routes when configured and the normal
+`codex` executable is available.
 
 ## Minimal example
 

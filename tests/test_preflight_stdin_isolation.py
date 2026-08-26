@@ -48,7 +48,7 @@ class DelegationPreflightStdinIsolationTests(unittest.TestCase):
 
         def fake_run(command, **kwargs):
             if command[-1] == "models":
-                return _fake_completed(stdout="gemini-3.7-flash-medium\tFlash\n")
+                return _fake_completed(stdout="gemini-3.7-flash-medium\tFlash\ngpt-5.6-terra\ngpt-5.6-luna\n")
             if "--version" in command:
                 return _fake_completed(stdout="v1")
             return _fake_completed(stdout=" ".join(required_union))

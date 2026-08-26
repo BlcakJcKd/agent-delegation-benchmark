@@ -11,7 +11,7 @@ agent-delegation-benchmark repository        (source / development / evidence)
     | scripts/install-user-delegation.sh
     |
     +--> installed user-level Python runtime  (pipx venv, self-contained)
-    |        provides: ask-flash, ask-haiku, ask-sonnet,
+    |        provides: ask-flash, ask-haiku, ask-sonnet, ask-terra, ask-luna,
     |                   ask-deepseek-pro, ask-deepseek-flash, ask-minimax-m3
     |                   (experimental PAYG, disabled by default -- see
     |                   PAYG_DELEGATES.md),
@@ -44,7 +44,7 @@ scripts/install-user-delegation.sh
 
 This: runs the test suite and the no-model delegation preflight; installs
 the package with `pipx install --force` (no sudo, no venv activation to
-remember — pipx manages its own isolated venv and puts all eight commands on
+remember — pipx manages its own isolated venv and puts all ten commands on
 your `PATH`); creates a default config only if one doesn't already exist
 (the three experimental PAYG routes come out disabled either way — see
 [PAYG_DELEGATES.md](PAYG_DELEGATES.md)); and installs/refreshes the skill.
@@ -59,8 +59,10 @@ open a new shell.
    && python3 -m pipx ensurepath`, then open a new shell.
 2. Clone this repository.
 3. Run `scripts/install-user-delegation.sh`.
-4. Authenticate whichever CLIs you intend to use as delegates (`claude`,
-   `agy`) the normal way — this installer never touches authentication.
+4. Authenticate whichever CLIs you intend to use as delegates (`codex`,
+   `claude`, `agy`) the normal way — this installer never touches
+   authentication. Terra/Luna use the normal OpenAI/Codex subscription path;
+   they are external only for non-Codex primaries and native-only for Codex.
 5. From any other directory, run `delegate-status --primary <your-identity>`
    to confirm the installed commands work independent of this checkout.
 

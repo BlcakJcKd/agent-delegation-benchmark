@@ -98,6 +98,14 @@ def ask_sonnet_main() -> int:
     return main(fixed_delegate="sonnet")
 
 
+def ask_terra_main() -> int:
+    return main(fixed_delegate="terra")
+
+
+def ask_luna_main() -> int:
+    return main(fixed_delegate="luna")
+
+
 def ask_deepseek_pro_main() -> int:
     return main(fixed_delegate="deepseek-pro")
 

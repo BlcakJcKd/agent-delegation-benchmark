@@ -5,7 +5,8 @@ description: >
   Claude Haiku/Sonnet) is available as installed global commands, when it's
   worth using, and how to check what's currently eligible. Use when deciding
   whether to consult another model, when the user asks about delegation
-  options, or before invoking ask-flash/ask-haiku/ask-sonnet/delegate-status.
+  options, or before invoking ask-flash/ask-haiku/ask-sonnet/ask-terra/ask-luna/
+  delegate-status.
 ---
 
 # Delegation
@@ -15,6 +16,30 @@ This is optional capacity, not a requirement, and this skill is a thin
 discovery/judgement layer — it teaches when and how, not safety mechanics.
 All enforcement (recursion prevention, scope validation, the self-provider
 guard) lives in the installed code, not here.
+
+## SAME-PROVIDER WORK USES NATIVE AGENTS
+
+This is a routing invariant, not a preference:
+
+- **Codex/OpenAI primary:** Terra and Luna are same-provider workers. Use
+  native Codex agents. Never use `ask-terra` or `ask-luna` merely to launch
+  another Codex process for ordinary same-provider work.
+- **Claude Code/Anthropic primary:** Sonnet and Haiku are same-provider
+  workers. Use native Claude subagents. Never use `ask-sonnet` or `ask-haiku`
+  merely to launch another Claude process for ordinary same-provider work.
+- **Cross-provider:** Claude Code may use `ask-terra`/`ask-luna`; Codex may
+  use `ask-sonnet`/`ask-haiku`. These are valid because the target provider
+  differs from the primary.
+- **Gemini primary:** preserve the same-provider native-agent rule; use native
+  Gemini agents where supported and do not use `ask-flash` merely to call
+  Gemini again.
+
+`delegate-status --primary codex` therefore reports Terra/Luna as
+`native-only`, while `delegate-status --primary claude-code` reports enabled,
+executable-backed Terra/Luna routes as `available`. The reverse holds for
+Sonnet/Haiku. This avoids recursive CLI orchestration, preserves host-native
+supervision, avoids unnecessary context/process overhead, and keeps
+provider-recursion semantics explicit.
 
 ## Canonical external-consultation workflow
 
@@ -36,6 +61,10 @@ Use this sequence for every external consultation:
    ```bash
    ask-flash --workspace /absolute/scoped-copy \
      --prompt-file /absolute/consultation-task.md --primary codex
+   ask-terra --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary claude-code
+   ask-luna --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary claude-code
    ask-deepseek-flash --workspace /absolute/scoped-copy \
      --prompt-file /absolute/consultation-task.md --primary codex
    ask-deepseek-pro --workspace /absolute/scoped-copy \
@@ -72,7 +101,9 @@ so it does not contaminate the consultation stdout stream.
 - Prefer your own native subagent/task facility for same-provider work over
   an external wrapper. Do not externally delegate back into your own
   provider — `delegate-status` will show this as `native-only`, and the
-  wrapper itself rejects it if you declare your identity.
+  wrapper itself rejects it if you declare your identity. In particular,
+  Codex uses native Terra/Luna agents and Claude Code uses native
+  Sonnet/Haiku subagents.
 - Gemini Flash is useful high-quota external capacity, not a mandatory first
   choice. Do not consult it reflexively on every task.
 
@@ -128,6 +159,8 @@ expensive to independently verify.
 
 ```bash
 ask-flash  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
+ask-terra  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
+ask-luna   --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ask-haiku  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ask-sonnet --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
 ask-deepseek-flash --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>

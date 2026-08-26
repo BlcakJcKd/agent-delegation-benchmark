@@ -14,8 +14,8 @@ read-only consultation policy and wrappers are in
 ## Delegation as a user-level tool
 
 This repository is also the source for an installable, cross-project
-delegation runtime: `ask-flash`/`ask-haiku`/`ask-sonnet` for read-only
-consultation, `delegate-status` for a zero-model-call view of what's
+delegation runtime: `ask-terra`/`ask-luna`/`ask-flash`/`ask-haiku`/`ask-sonnet`
+for read-only consultation, `delegate-status` for a zero-model-call view of what's
 currently eligible, and `delegate-config` to persistently enable/disable
 providers or routes. Once installed (`scripts/install-user-delegation.sh`),
 none of this depends on this checkout still existing — see
@@ -31,6 +31,11 @@ installed runtime is truly independent of this checkout, see
 [docs/USER_INSTALLATION.md](docs/USER_INSTALLATION.md#testing-portability-safely-and-a-hazard-to-avoid)
 first — a naive test method can lock an agent out of its own working
 directory.
+
+`ask-terra` and `ask-luna` are external OpenAI/Codex routes for non-Codex
+primaries and use the normal Codex subscription authentication. A Codex
+primary uses native Codex agents for Terra/Luna; similarly, Claude Code uses
+native Claude subagents for Sonnet/Haiku rather than `ask-sonnet`/`ask-haiku`.
 
 `ask-deepseek-pro`/`ask-deepseek-flash`/`ask-minimax-m3` add three
 experimental, pay-as-you-go (PAYG) routes on top of the same runtime,

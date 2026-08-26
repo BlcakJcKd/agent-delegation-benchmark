@@ -54,6 +54,12 @@ DELEGATES: dict[str, DelegateSpec] = {
     "flash": DelegateSpec("flash", "agy", "gemini-3.7-flash-medium", "medium"),
     "haiku": DelegateSpec("haiku", "claude", "claude-haiku-4-5-20251001", "medium"),
     "sonnet": DelegateSpec("sonnet", "claude", "claude-sonnet-5", "medium"),
+    # Stable cross-provider routes for non-Codex primaries. Their inference
+    # provider is OpenAI/Codex and their transport is the normal authenticated
+    # `codex` CLI. The same-provider guard makes these native-only for a Codex
+    # primary, which must use native Codex agents instead.
+    "terra": DelegateSpec("terra", "codex", "gpt-5.6-terra", "medium"),
+    "luna": DelegateSpec("luna", "codex", "gpt-5.6-luna", "medium"),
     # Experimental PAYG routes (see docs/PAYG_DELEGATES.md). Transport is the
     # `codex-deepseek`/`codex-minimax` launchers -- independently verified,
     # pre-existing Codex provider-profile wrappers that pin `--profile
@@ -88,9 +94,9 @@ def build_argv(spec: DelegateSpec, workspace: Path, task: str) -> list[str]:
     """Build a documented, non-bypass read-only consultation argv list.
 
     The final prompt remains one argv item.  The caller uses ``workspace`` as
-    process CWD; Codex additionally receives a read-only sandbox and is kept
-    available here for a future *non-recursive* direct consultation pathway,
-    though no Codex wrapper is installed by this foundation.
+    process CWD; Codex routes additionally receive a read-only sandbox and
+    use the normal authenticated Codex CLI. The self-provider guard prevents
+    a Codex primary from using that transport as a recursive same-provider hop.
     """
     prompt = _read_only_instruction(task, workspace)
     if spec.name in {"haiku", "sonnet"}:
@@ -121,10 +127,10 @@ def build_argv(spec: DelegateSpec, workspace: Path, task: str) -> list[str]:
             "--model", spec.model, "--config", f'model_reasoning_effort="{spec.effort or "high"}"',
             prompt,
         ]
-    if spec.name == "codex":
+    if spec.name in {"codex", "terra", "luna"}:
         return [
             "codex", "exec", "--ephemeral", "--skip-git-repo-check",
-            "--sandbox", "read-only", "--cd", str(workspace), "--json",
+            "--sandbox", "read-only", "--cd", str(workspace),
             "--model", spec.model, "--config", f'model_reasoning_effort="{spec.effort or "medium"}"',
             prompt,
         ]
@@ -290,6 +296,10 @@ def run_consultation(
     record = {
         "delegate": spec.name,
         "mode": spec.mode,
+        "provider": routing.ROUTE_PROVIDER.get(
+            spec.name, "codex" if spec.executable == "codex" else spec.executable
+        ),
+        "transport": routing.ROUTE_TRANSPORT.get(spec.name, spec.executable),
         "caller": resolved_caller,
         "declared_primary": normalized_primary or "not-declared",
         "requested_model": spec.model,
@@ -310,6 +320,10 @@ def run_consultation(
             "Claude plan mode with Read/Glob/Grep only"
             if spec.name in {"haiku", "sonnet"}
             else "Antigravity plan mode with sandbox"
+            if spec.name == "flash"
+            else "Codex exec read-only sandbox"
+            if spec.executable == "codex"
+            else "provider launcher read-only sandbox"
         ),
         "environment_captured": False,
         "recursive_delegation_enabled": False,

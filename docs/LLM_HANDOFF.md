@@ -23,6 +23,12 @@ delegate-status`), you do not need this repository at all to use it — see
 - The primary agent chooses whether and which delegate to use.
 - A primary runtime's own native subagent facility may be preferred over an
   external CLI delegate when one is genuinely useful.
+- Codex primary -> native Codex agents for Terra/Luna; do not use
+  `ask-terra`/`ask-luna` for ordinary same-provider work.
+- Claude Code primary -> native Claude subagents for Sonnet/Haiku; do not use
+  `ask-sonnet`/`ask-haiku` for ordinary same-provider work.
+- Claude -> `ask-terra`/`ask-luna` and Codex -> `ask-sonnet`/`ask-haiku` are
+  valid cross-provider routes.
 - Gemini 3.7 Flash Medium (via `bin/ask-flash`) is spare/high-quota capacity,
   not a mandatory step.
 - The primary agent owns verification and integration of anything a delegate
@@ -34,6 +40,10 @@ delegate-status`), you do not need this repository at all to use it — see
   native agent capability for same-provider work instead.
 - Check `delegate-status --primary <your-identity>` before delegating; it
   makes zero model calls and reports what's actually eligible.
+- `ask-terra`/`ask-luna` return their textual OpenAI/Codex consultation on
+  stdout; no delegate-generated review file is required. Preserve the
+  300-second default timeout, and call a genuine timeout only when exit 124
+  and `timed_out:true` are recorded.
 - Availability config (`delegate-config`) is user-owned state: read and
   respect it, don't mutate it on your own judgement.
 - External consultation is read-only by default; no wrapper here grants a

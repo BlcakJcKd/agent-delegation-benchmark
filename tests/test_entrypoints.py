@@ -10,7 +10,10 @@ import io
 import unittest
 from contextlib import redirect_stdout
 
-from delegation.cli import ask_flash_main, ask_haiku_main, ask_sonnet_main, main
+from delegation.cli import (
+    ask_flash_main, ask_haiku_main, ask_luna_main,
+    ask_sonnet_main, ask_terra_main, main,
+)
 
 
 class FixedDelegateEntryPointTests(unittest.TestCase):
@@ -33,6 +36,18 @@ class FixedDelegateEntryPointTests(unittest.TestCase):
                 main(["--help"], fixed_delegate="sonnet")
         self.assertEqual(ctx.exception.code, 0)
 
+    def test_ask_terra_help_exits_cleanly(self):
+        with self.assertRaises(SystemExit) as ctx:
+            with redirect_stdout(io.StringIO()):
+                main(["--help"], fixed_delegate="terra")
+        self.assertEqual(ctx.exception.code, 0)
+
+    def test_ask_luna_help_exits_cleanly(self):
+        with self.assertRaises(SystemExit) as ctx:
+            with redirect_stdout(io.StringIO()):
+                main(["--help"], fixed_delegate="luna")
+        self.assertEqual(ctx.exception.code, 0)
+
     def test_missing_required_workspace_argument_is_rejected_before_any_subprocess(self):
         with self.assertRaises(SystemExit) as ctx:
             with redirect_stdout(io.StringIO()), __import__("contextlib").redirect_stderr(io.StringIO()):
@@ -43,7 +58,7 @@ class FixedDelegateEntryPointTests(unittest.TestCase):
         # Confirms the pyproject.toml [project.scripts] targets actually
         # resolve to callables with the expected signature (no argv param
         # needed -- setuptools' generated stub calls them with none).
-        for func in (ask_flash_main, ask_haiku_main, ask_sonnet_main):
+        for func in (ask_flash_main, ask_haiku_main, ask_sonnet_main, ask_terra_main, ask_luna_main):
             self.assertTrue(callable(func))
 
 

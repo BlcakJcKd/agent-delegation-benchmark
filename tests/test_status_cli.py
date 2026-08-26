@@ -43,6 +43,17 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(by_route["haiku"]["effective"], "native-only")
         self.assertEqual(by_route["sonnet"]["effective"], "native-only")
         self.assertEqual(by_route["flash"]["effective"], "available")
+        self.assertEqual(by_route["terra"]["effective"], "available")
+        self.assertEqual(by_route["luna"]["effective"], "available")
+
+    def test_codex_primary_shows_terra_luna_native_only_and_claude_external(self):
+        report = build_report("codex", which=_which_all_present, config=default_config())
+        by_route = {r["route"]: r for r in report["routes"]}
+        for route in ("terra", "luna"):
+            self.assertEqual(by_route[route]["effective"], "native-only")
+            self.assertEqual(by_route[route]["route_type"], "same-provider")
+        for route in ("haiku", "sonnet"):
+            self.assertEqual(by_route[route]["effective"], "available")
 
     def test_disabled_provider_reason_surfaces_in_report(self):
         config = set_enabled(default_config(), "providers", "codex", False, reason="weekly quota low")
