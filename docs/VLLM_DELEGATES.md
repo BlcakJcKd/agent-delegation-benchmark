@@ -61,7 +61,8 @@ failures, or poor responses to a service administrator.
 ## Codex harness compatibility
 
 The direct adapter is separate from Codex's primary-model transport. Codex
-CLI versions that only support the Responses wire API cannot directly use a
-Chat Completions-only vLLM endpoint. Do not add a proxy solely to force that
-combination; audit the installed Codex version first and consider a compatible
-coding-agent product separately.
+custom providers require the Responses wire API; compatibility therefore
+depends on the target vLLM exposing a sufficiently OpenAI-compatible
+`/v1/responses` implementation. Audit the installed Codex version and target
+server together before occasional harness use. Do not add a proxy solely to
+force compatibility.
