@@ -32,6 +32,11 @@ installed runtime is truly independent of this checkout, see
 first — a naive test method can lock an agent out of its own working
 directory.
 
+Generic shared OpenAI-compatible/vLLM consultation is available through the
+machine-local `ask-vllm <named-route>` command. It is direct, bounded,
+non-thinking by default, single-concurrency, and never an automatic fallback;
+see [docs/VLLM_DELEGATES.md](docs/VLLM_DELEGATES.md).
+
 `ask-terra` and `ask-luna` are external OpenAI/Codex routes for non-Codex
 primaries and use the normal Codex subscription authentication. A Codex
 primary uses native Codex agents for Terra/Luna; similarly, Claude Code uses

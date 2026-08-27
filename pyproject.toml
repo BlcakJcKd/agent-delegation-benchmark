@@ -17,6 +17,7 @@ ask-luna = "delegation.cli:ask_luna_main"
 ask-deepseek-pro = "delegation.cli:ask_deepseek_pro_main"
 ask-deepseek-flash = "delegation.cli:ask_deepseek_flash_main"
 ask-minimax-m3 = "delegation.cli:ask_minimax_m3_main"
+ask-vllm = "delegation.vllm_cli:main"
 delegate-status = "delegation.status_cli:main"
 delegate-config = "delegation.config_cli:main"
 

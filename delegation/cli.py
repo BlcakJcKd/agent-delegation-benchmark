@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from .core import DELEGATES, DEFAULT_TIMEOUT_SECONDS, run_consultation
+from .vllm_cli import main as vllm_main
 
 
 def _parser(*, fixed_delegate: str | None = None) -> argparse.ArgumentParser:
@@ -119,4 +120,6 @@ def ask_minimax_m3_main() -> int:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "vllm":
+        raise SystemExit(vllm_main(sys.argv[2:]))
     raise SystemExit(main())

@@ -12,6 +12,7 @@ from .core import (
     build_argv,
     run_consultation,
 )
+from .vllm import VLLMProvider, VLLMRunResult, load_vllm_config, run_vllm_consultation
 
 __all__ = [
     "DELEGATES",
@@ -20,4 +21,8 @@ __all__ = [
     "DelegateSpec",
     "build_argv",
     "run_consultation",
+    "VLLMProvider",
+    "VLLMRunResult",
+    "load_vllm_config",
+    "run_vllm_consultation",
 ]

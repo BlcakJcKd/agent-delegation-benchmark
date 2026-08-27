@@ -254,6 +254,25 @@ for as one of:
 
 An ambiguous “no usable textual review records” state is not completion.
 
+## Shared OpenAI-compatible/vLLM routes
+
+Some machines may have an explicitly configured named route for a shared
+OpenAI-compatible vLLM service. Use `ask-vllm <named-route>` only for tightly
+scoped, read-only consultation when the route is deliberately selected. It is
+not an automatic fallback for any other provider and must not be used for
+parallel fan-out, speculative requests, nested delegation, or unconstrained
+coding-agent sessions. The direct adapter sends one bounded Chat Completions
+request, defaults to `enable_thinking = false`, uses a machine-local
+single-request lock, and has no automatic retry or cloud substitution.
+
+The named route configuration and redacted JSONL reliability records are
+machine-local; never commit them or put credentials in prompts, config,
+fixtures, logs, or diagnostics. See
+`docs/VLLM_DELEGATES.md` in the source repository for the configuration and
+reporting contract. A Codex primary-model configuration is a separate audit:
+do not assume a Chat Completions-only endpoint is compatible with Codex's
+Responses transport.
+
 ## Timeout and cancellation semantics
 
 The default `ask-*` timeout is 300 seconds. If a shorter operational bound is

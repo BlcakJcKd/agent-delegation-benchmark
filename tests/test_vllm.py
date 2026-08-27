@@ -1,0 +1,285 @@
+"""Hermetic tests for the bounded direct OpenAI-compatible vLLM adapter."""
+
+from __future__ import annotations
+
+import json
+import socket
+import urllib.error
+from unittest.mock import MagicMock
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+from delegation import vllm
+from delegation.vllm_cli import main as vllm_main
+
+
+class RecordingTransport:
+    def __init__(self, status: int = 200, body: bytes | str = b'{"choices":[{"message":{"content":"answer"}}]}'):
+        self.status = status
+        self.body = body.encode() if isinstance(body, str) else body
+        self.calls: list[tuple[str, dict[str, str], bytes, int]] = []
+
+    def __call__(self, url: str, headers: dict[str, str], body: bytes, timeout: int) -> tuple[int, bytes]:
+        self.calls.append((url, headers, body, timeout))
+        return self.status, self.body
+
+
+class VLLMTestBase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.workspace = self.root / "workspace"
+        self.workspace.mkdir()
+        (self.workspace / ".delegation-scope.json").write_text('{"mode":"read-only"}')
+        self.config = self.root / "vllm.toml"
+        self.config.write_text(
+            "[providers.example]\n"
+            'model = "example-model"\n'
+            'base_url = "http://127.0.0.1:9000/v1"\n'
+            'credential_source = "env:UNIT_TEST_CREDENTIAL"\n'
+            "shared_compute = true\n"
+            "max_concurrency = 1\n"
+            "thinking_default = false\n"
+            "max_tokens = 64\n"
+        )
+        self.logs = self.root / "logs"
+        self.issues = self.root / "issues.jsonl"
+        self.lock = self.root / "vllm.lock"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def run_call(self, transport: RecordingTransport, **kwargs):
+        return vllm.run_vllm_consultation(
+            "example", self.workspace, "minimal task", config_path=self.config,
+            log_root=self.logs, issue_path=self.issues, lock_path=self.lock,
+            transport=transport, credential_loader=lambda _: "fixture", **kwargs,
+        )
+
+    def issue(self) -> dict:
+        return json.loads(self.issues.read_text().splitlines()[-1])
+
+
+class VLLMConfigTests(VLLMTestBase):
+    def test_missing_config_has_no_named_routes(self):
+        self.assertEqual(vllm.load_vllm_config(self.root / "missing.toml"), {})
+
+    def test_shared_provider_must_have_one_concurrent_request(self):
+        self.config.write_text(self.config.read_text().replace("max_concurrency = 1", "max_concurrency = 2"))
+        with self.assertRaisesRegex(ValueError, "max_concurrency = 1"):
+            vllm.load_vllm_config(self.config)
+
+    def test_credential_reference_is_not_a_secret_field(self):
+        config = vllm.load_vllm_config(self.config)
+        self.assertEqual(config["example"].credential_source, "env:UNIT_TEST_CREDENTIAL")
+        self.assertNotIn("fixture", self.config.read_text())
+
+    def test_invalid_url_with_embedded_credentials_is_rejected(self):
+        self.config.write_text(self.config.read_text().replace("http://127.0.0.1:9000/v1", "https://user:pass@example.invalid/v1"))
+        with self.assertRaisesRegex(ValueError, "credentials"):
+            vllm.load_vllm_config(self.config)
+
+    def test_malformed_config_is_a_safe_configuration_error(self):
+        self.config.write_text("[providers.example\n")
+        with self.assertRaisesRegex(ValueError, "could not be parsed"):
+            vllm.load_vllm_config(self.config)
+
+
+class VLLMTransportTests(VLLMTestBase):
+    def test_http_transport_maps_connection_timeout_without_exposing_details(self):
+        with patch.object(vllm.urllib.request, "urlopen", side_effect=urllib.error.URLError(socket.timeout("private"))):
+            with self.assertRaises(vllm.VLLMFailure) as ctx:
+                vllm._http_post("https://example.invalid/v1/chat/completions", {}, b"{}", 1)
+        self.assertEqual(ctx.exception.category, "request-timeout")
+        self.assertTrue(ctx.exception.timed_out)
+        self.assertNotIn("private", str(ctx.exception))
+
+    def test_http_transport_maps_read_timeout(self):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.side_effect = socket.timeout("private")
+        with patch.object(vllm.urllib.request, "urlopen", return_value=response):
+            with self.assertRaises(vllm.VLLMFailure) as ctx:
+                vllm._http_post("https://example.invalid/v1/chat/completions", {}, b"{}", 1)
+        self.assertEqual(ctx.exception.category, "request-timeout")
+        self.assertTrue(ctx.exception.timed_out)
+
+    def test_success_defaults_to_non_thinking_and_returns_text(self):
+        transport = RecordingTransport()
+        outcome = self.run_call(transport)
+        code, record_dir = outcome
+        self.assertEqual(code, 0)
+        self.assertEqual(outcome.text, "answer")
+        self.assertEqual(len(transport.calls), 1)
+        url, headers, body, timeout = transport.calls[0]
+        self.assertEqual(url, "http://127.0.0.1:9000/v1/chat/completions")
+        self.assertEqual(headers["Authorization"], "Bearer fixture")
+        request = json.loads(body)
+        self.assertFalse(request["chat_template_kwargs"]["enable_thinking"])
+        self.assertEqual(request["max_tokens"], 64)
+        self.assertEqual(timeout, 300)
+        self.assertEqual(self.issue()["result_state"], "text-returned")
+        evidence = (record_dir / "execution.json").read_text()
+        self.assertNotIn("fixture", evidence)
+        self.assertFalse((record_dir / "stdout.txt").exists())
+
+    def test_thinking_override_is_explicit(self):
+        transport = RecordingTransport()
+        self.assertEqual(self.run_call(transport, thinking=True)[0], 0)
+        request = json.loads(transport.calls[0][2])
+        self.assertTrue(request["chat_template_kwargs"]["enable_thinking"])
+
+    def test_authorization_is_never_in_issue_or_stderr(self):
+        transport = RecordingTransport(status=401, body=b"private server detail")
+        code, record_dir = self.run_call(transport)
+        self.assertEqual(code, 1)
+        for path in (self.issues, record_dir / "stderr.txt", record_dir / "execution.json"):
+            content = path.read_text()
+            self.assertNotIn("fixture", content)
+            self.assertNotIn("Authorization", content)
+            self.assertNotIn("private server detail", content)
+
+    def test_http_failure_categories_have_no_fallback_or_retry(self):
+        cases = {
+            401: "authentication-failure", 403: "authentication-failure",
+            404: "api-compatibility-failure", 405: "api-compatibility-failure",
+            429: "rate-limited", 500: "server-failure", 503: "server-failure",
+        }
+        for status, category in cases.items():
+            with self.subTest(status=status):
+                transport = RecordingTransport(status=status, body=b"not logged")
+                code, record_dir = self.run_call(transport)
+                self.assertEqual(code, 1)
+                self.assertEqual(len(transport.calls), 1)
+                execution = json.loads((record_dir / "execution.json").read_text())
+                self.assertEqual(execution["error_category"], category)
+                self.assertFalse(execution["retry"])
+                self.assertIsNone(execution["fallback"])
+
+    def test_connection_timeout_is_exit_124_and_logged(self):
+        def timed_out(*args):
+            raise vllm.VLLMFailure("request-timeout", "vLLM request timed out", timed_out=True)
+
+        code, record_dir = self.run_call(timed_out)
+        self.assertEqual(code, 124)
+        execution = json.loads((record_dir / "execution.json").read_text())
+        self.assertTrue(execution["timed_out"])
+        self.assertEqual(execution["error_category"], "request-timeout")
+        self.assertTrue(self.issue()["timeout"])
+
+    def test_connection_error_is_clear_and_not_a_model_failure(self):
+        def unavailable(*args):
+            raise vllm.VLLMFailure("connection-error", "private-marker must not be reflected")
+
+        code, record_dir = self.run_call(unavailable)
+        self.assertEqual(code, 1)
+        execution = json.loads((record_dir / "execution.json").read_text())
+        self.assertEqual(execution["error_category"], "connection-error")
+        self.assertFalse(execution["timed_out"])
+        self.assertNotIn("private-marker", (record_dir / "stderr.txt").read_text())
+
+    def test_malformed_empty_and_refusal_responses_are_classified(self):
+        cases = [
+            (b"not-json", "malformed-response"),
+            (b'{"choices":[]}', "empty-response"),
+            (b'{"choices":[{"message":{"refusal":"no"}}]}', "model-refusal"),
+        ]
+        for body, category in cases:
+            with self.subTest(category=category):
+                transport = RecordingTransport(body=body)
+                code, record_dir = self.run_call(transport)
+                self.assertEqual(code, 1)
+                execution = json.loads((record_dir / "execution.json").read_text())
+                self.assertEqual(execution["error_category"], category)
+                self.assertEqual(execution["response_status"], "model/response-failure")
+
+    def test_top_level_model_error_is_classified_without_recording_error_body(self):
+        transport = RecordingTransport(body=b'{"error":{"message":"private model detail"}}')
+        code, record_dir = self.run_call(transport)
+        self.assertEqual(code, 1)
+        execution = json.loads((record_dir / "execution.json").read_text())
+        self.assertEqual(execution["error_category"], "model-response-failure")
+        self.assertEqual(execution["response_status"], "model/response-failure")
+        self.assertNotIn("private model detail", (record_dir / "stderr.txt").read_text())
+
+    def test_manual_termination_is_an_incomplete_infrastructure_run(self):
+        def interrupted(*args):
+            raise KeyboardInterrupt
+
+        outcome = self.run_call(interrupted)
+        code, record_dir = outcome
+        self.assertEqual(code, 130)
+        self.assertEqual(outcome.text, "")
+        execution = json.loads((record_dir / "execution.json").read_text())
+        self.assertEqual(execution["response_status"], "incomplete-infrastructure-run")
+        self.assertEqual(execution["error_category"], "manual-termination")
+        self.assertEqual(self.issue()["result_state"], "incomplete-infrastructure-run")
+
+    def test_recursion_guard_rejects_vllm_before_any_request(self):
+        transport = RecordingTransport()
+        with patch.dict("os.environ", {"AGENT_DELEGATION_DEPTH": "1"}):
+            with self.assertRaisesRegex(ValueError, "recursive delegation rejected"):
+                self.run_call(transport)
+        self.assertEqual(transport.calls, [])
+
+    def test_lock_is_non_parallel_and_released_after_scope_exit(self):
+        transport = RecordingTransport()
+        with vllm._request_lock(self.lock):
+            code, record_dir = self.run_call(transport)
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads((record_dir / "execution.json").read_text())["error_category"], "concurrency-busy")
+            self.assertEqual(transport.calls, [])
+        code, _ = self.run_call(transport)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(transport.calls), 1)
+        self.assertTrue(self.lock.exists(), "lock file may remain; the kernel lock must be released")
+
+    def test_issue_log_is_local_structured_and_contains_no_prompt_or_response(self):
+        transport = RecordingTransport()
+        self.run_call(transport)
+        record = self.issue()
+        self.assertEqual(record["adapter"], "openai-compatible-vllm")
+        self.assertEqual(record["route"], "example")
+        self.assertIn("timestamp", record)
+        self.assertIn("machine_label", record)
+        self.assertNotIn("minimal task", json.dumps(record))
+        self.assertNotIn("answer", json.dumps(record))
+
+
+class VLLMCLITests(unittest.TestCase):
+    def test_help_is_zero_model_and_describes_explicit_thinking_controls(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(SystemExit) as ctx:
+            vllm_main(["--help"])
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("--thinking", output.getvalue())
+        self.assertIn("--no-thinking", output.getvalue())
+        self.assertNotIn("--lock-path", output.getvalue())
+        self.assertNotIn("--issue-log", output.getvalue())
+
+    def test_cli_replays_text_on_stdout_and_diagnostics_on_stderr(self):
+        from io import StringIO
+        from contextlib import redirect_stderr, redirect_stdout
+
+        with TemporaryDirectory() as temp:
+            record_dir = Path(temp)
+            (record_dir / "stdout.txt").write_text("text result")
+            (record_dir / "stderr.txt").write_text("diagnostic\n")
+            out, err = StringIO(), StringIO()
+            with patch("delegation.vllm_cli.run_vllm_consultation", return_value=(0, record_dir)):
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = vllm_main(["example", "--workspace", temp, "--prompt", "task"])
+            self.assertEqual(code, 0)
+            self.assertEqual(out.getvalue(), "text result")
+            self.assertIn("diagnostic", err.getvalue())
+            self.assertNotIn("text result", err.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

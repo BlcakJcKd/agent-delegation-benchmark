@@ -1,0 +1,20 @@
+# Machine-local only: copy this to $XDG_CONFIG_HOME/agent-delegation/vllm.toml.
+# Never commit a copy containing a private hostname, token, or institution
+# details. This generic example intentionally points at example.invalid.
+
+[providers.example-vllm]
+model = "example-model"
+base_url = "https://example.invalid/v1"
+
+# Use either an environment reference or an Ubuntu login-keyring reference.
+# The secret itself must never appear in this file.
+credential_source = "keyring"
+keyring_service = "ai-coding-provider"
+keyring_provider = "example-vllm"
+
+# Shared-service safety policy: one request at a time, bounded output, and
+# non-thinking mode unless the caller explicitly requests --thinking.
+shared_compute = true
+max_concurrency = 1
+thinking_default = false
+max_tokens = 512

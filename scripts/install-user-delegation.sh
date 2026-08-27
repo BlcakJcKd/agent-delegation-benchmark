@@ -7,7 +7,8 @@
 #      producing ask-flash / ask-haiku / ask-sonnet / ask-terra / ask-luna /
 #      ask-deepseek-pro /
 #      ask-deepseek-flash / ask-minimax-m3 (experimental PAYG, disabled by
-#      default -- see docs/PAYG_DELEGATES.md) / delegate-status /
+#      default -- see docs/PAYG_DELEGATES.md) / ask-vllm (generic named
+#      local OpenAI-compatible/vLLM route) / delegate-status /
 #      delegate-config as commands independent of this repo's location
 #      after install (pipx builds and copies the package into its own venv)
 #   3. create an initial XDG config.toml only if one does not already exist
@@ -120,7 +121,7 @@ fi
 echo
 echo "== Done =="
 echo "Commands:"
-for cmd in ask-flash ask-haiku ask-sonnet ask-terra ask-luna ask-deepseek-pro ask-deepseek-flash ask-minimax-m3 delegate-status delegate-config; do
+for cmd in ask-flash ask-haiku ask-sonnet ask-terra ask-luna ask-deepseek-pro ask-deepseek-flash ask-minimax-m3 ask-vllm delegate-status delegate-config; do
   path="$(command -v "$cmd" 2>/dev/null || echo "NOT ON PATH")"
   echo "  $cmd: $path"
 done

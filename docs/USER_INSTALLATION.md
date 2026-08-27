@@ -12,7 +12,8 @@ agent-delegation-benchmark repository        (source / development / evidence)
     |
     +--> installed user-level Python runtime  (pipx venv, self-contained)
     |        provides: ask-flash, ask-haiku, ask-sonnet, ask-terra, ask-luna,
-    |                   ask-deepseek-pro, ask-deepseek-flash, ask-minimax-m3
+    |                   ask-deepseek-pro, ask-deepseek-flash, ask-minimax-m3,
+    |                   ask-vllm
     |                   (experimental PAYG, disabled by default -- see
     |                   PAYG_DELEGATES.md),
     |                   delegate-status, delegate-config
@@ -44,14 +45,20 @@ scripts/install-user-delegation.sh
 
 This: runs the test suite and the no-model delegation preflight; installs
 the package with `pipx install --force` (no sudo, no venv activation to
-remember — pipx manages its own isolated venv and puts all ten commands on
+remember — pipx manages its own isolated venv and puts all eleven commands on
 your `PATH`); creates a default config only if one doesn't already exist
 (the three experimental PAYG routes come out disabled either way — see
 [PAYG_DELEGATES.md](PAYG_DELEGATES.md)); and installs/refreshes the skill.
 It makes no provider-authentication changes and no model calls.
 
 If a command reports `NOT ON PATH` at the end, run `pipx ensurepath` and
-open a new shell.
+open a new shell. The install currently exposes eleven commands, including
+the optional `ask-vllm` entry point.
+
+`ask-vllm` is installed with the same runtime but reads only the optional
+machine-local named-provider file described in
+[VLLM_DELEGATES.md](VLLM_DELEGATES.md). The installer never creates or changes
+that file.
 
 ### New-laptop checklist
 
