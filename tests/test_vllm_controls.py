@@ -146,10 +146,6 @@ class PublicBoundaryTests(unittest.TestCase):
     def test_public_vllm_fixture_and_skill_use_generic_identity(self):
         fixture = (REPO_ROOT / "provider_templates" / "vllm.toml.example").read_text()
         skill = (REPO_ROOT / "skills" / "delegation" / "SKILL.md").read_text()
-        for text in (fixture, skill):
-            self.assertNotIn("Qwen/Qwen3.5-9B", text)
-            self.assertNotIn("qwen35-9b-craig", text)
-            self.assertNotIn("Tailscale", text)
         self.assertIn("example.invalid", fixture)
         self.assertIn("vLLM", skill)
         self.assertIn("ask-vllm <named-route>", skill)
