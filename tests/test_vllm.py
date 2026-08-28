@@ -121,7 +121,7 @@ class VLLMTransportTests(VLLMTestBase):
         self.assertFalse(request["chat_template_kwargs"]["enable_thinking"])
         self.assertEqual(request["max_tokens"], 64)
         self.assertEqual(timeout, 300)
-        self.assertEqual(self.issue()["result_state"], "text-returned")
+        self.assertFalse(self.issues.exists(), "successful runs belong in delegate_runs, not the issue log")
         evidence = (record_dir / "execution.json").read_text()
         self.assertNotIn("fixture", evidence)
         self.assertFalse((record_dir / "stdout.txt").exists())
@@ -238,7 +238,7 @@ class VLLMTransportTests(VLLMTestBase):
         self.assertTrue(self.lock.exists(), "lock file may remain; the kernel lock must be released")
 
     def test_issue_log_is_local_structured_and_contains_no_prompt_or_response(self):
-        transport = RecordingTransport()
+        transport = RecordingTransport(status=503, body=b"private server detail")
         self.run_call(transport)
         record = self.issue()
         self.assertEqual(record["adapter"], "openai-compatible-vllm")

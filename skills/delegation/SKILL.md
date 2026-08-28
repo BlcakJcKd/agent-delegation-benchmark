@@ -257,13 +257,20 @@ An ambiguous “no usable textual review records” state is not completion.
 ## Shared OpenAI-compatible/vLLM routes
 
 Some machines may have an explicitly configured named route for a shared
-OpenAI-compatible vLLM service. Use `ask-vllm <named-route>` only for tightly
+OpenAI-compatible vLLM service. Check `delegate-status --primary <identity>`
+first, then use `ask-vllm <named-route>` only for tightly
 scoped, read-only consultation when the route is deliberately selected. It is
 not an automatic fallback for any other provider and must not be used for
 parallel fan-out, speculative requests, nested delegation, or unconstrained
 coding-agent sessions. The direct adapter sends one bounded Chat Completions
 request, defaults to `enable_thinking = false`, uses a machine-local
 single-request lock, and has no automatic retry or cloud substitution.
+
+Shared-compute routes must respect their configured concurrency and runtime
+policy. In particular, do not perform speculative fan-out, do not substitute
+another provider automatically, and respect a configured non-thinking default.
+An unavailable server is an infrastructure-availability failure, not evidence
+that the model produced a poor response; keep those diagnoses separate.
 
 The named route configuration and redacted JSONL reliability records are
 machine-local; never commit them or put credentials in prompts, config,

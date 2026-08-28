@@ -17,6 +17,7 @@ from . import routing
 from .config import load_config
 from .paths import config_path, log_root
 from .status import compute_status
+from .vllm import inspect_vllm_routes, vllm_config_path
 
 DIST_NAME = "agent-delegation-benchmark"
 
@@ -49,12 +50,32 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_report(primary: str | None, which=shutil.which, config: dict | None = None) -> dict[str, Any]:
+def build_report(
+    primary: str | None,
+    which=shutil.which,
+    config: dict | None = None,
+    vllm_routes: dict | None = None,
+) -> dict[str, Any]:
     resolved_config = config if config is not None else load_config()
+    resolved_vllm = dict(vllm_routes) if vllm_routes is not None else (
+        inspect_vllm_routes() if config is None else {}
+    )
+    # Preserve a user-owned availability preference even if the local route
+    # definition was removed or became unreadable; status reports that state
+    # instead of silently dropping the route.
+    for route in resolved_config.get("vllm", {}):
+        if route not in resolved_vllm:
+            from .vllm import VLLMRouteInfo
+            resolved_vllm[route] = VLLMRouteInfo(
+                route, None, "local vLLM route definition is missing", "invalid-configuration"
+            )
     normalized_primary = routing.normalize_primary(primary)
-    routes = compute_status(resolved_config, primary=primary, which=which)
+    routes = compute_status(
+        resolved_config, primary=primary, which=which, vllm_routes=resolved_vllm
+    )
     return {
         "config_path": str(config_path()),
+        "vllm_config_path": str(vllm_config_path()),
         "state_log_path": str(log_root()),
         "runtime_version": _runtime_version(),
         "skill": skill_status(),
@@ -66,6 +87,7 @@ def build_report(primary: str | None, which=shutil.which, config: dict | None = 
 
 def _print_human(report: dict[str, Any]) -> None:
     print(f"Config:  {report['config_path']}")
+    print(f"vLLM:    {report['vllm_config_path']}")
     print(f"State:   {report['state_log_path']}")
     print(f"Runtime: {report['runtime_version']}")
     skill = report["skill"]
@@ -79,7 +101,8 @@ def _print_human(report: dict[str, Any]) -> None:
     print()
     header = (
         f"{'Route':<15} {'Provider':<9} {'Transport':<10} {'Billing':<8} {'Maturity':<13} "
-        f"{'Config':<10} {'Route type':<14} {'Effective':<18} Reason"
+        f"{'Config':<10} {'Route type':<14} {'Effective':<25} {'Model':<24} "
+        f"{'Shared':<8} {'Conc.':<6} {'Think':<6} Reason"
     )
     print(header)
     print("-" * len(header))
@@ -89,7 +112,11 @@ def _print_human(report: dict[str, Any]) -> None:
         print(
             f"{route['route']:<15} {route['provider']:<9} {route['transport']:<10} "
             f"{route['billing']:<8} {route['maturity']:<13} {config_state:<10} "
-            f"{route['route_type']:<14} {route['effective']:<18} {reason}"
+            f"{route['route_type']:<14} {route['effective']:<25} "
+            f"{(route.get('model') or ''):<24} "
+            f"{('yes' if route.get('shared_compute') else 'no' if route.get('shared_compute') is not None else ''):<8} "
+            f"{(route.get('max_concurrency') or '')!s:<6} "
+            f"{('on' if route.get('thinking_default') else 'off' if route.get('thinking_default') is not None else ''):<6} {reason}"
         )
 
 

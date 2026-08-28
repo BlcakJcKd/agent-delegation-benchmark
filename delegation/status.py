@@ -1,10 +1,11 @@
 """Zero-model-call computation of the effective delegation landscape.
 
 Combines user config (``delegation.config``) with the fixed route/provider
-tables (``delegation.routing``) and, for routes with an external wrapper,
-whether that wrapper's executable is actually on PATH. Never invokes a
-delegate CLI, never queries quota -- quota availability is user-managed in
-this version (see docs/DELEGATE_CONFIGURATION.md).
+tables (``delegation.routing``), local named vLLM schema inspection, and, for
+fixed routes with an external wrapper, whether that wrapper's executable is
+actually on PATH. Never invokes a delegate CLI, resolves credentials, or
+queries quota -- quota availability is user-managed in this version (see
+docs/DELEGATE_CONFIGURATION.md).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from . import routing
+from .vllm import VLLMRouteInfo
 
 
 @dataclass(frozen=True)
@@ -26,10 +28,16 @@ class RouteStatus:
     configured_enabled: bool
     configured_reason: str | None
     route_type: str  # "external" | "same-provider" | "native-only"
-    effective: str  # "available" | "native-only" | "disabled" | "executable missing"
+    effective: str  # also "invalid configuration" | "missing credential reference"
     effective_reason: str | None
     executable: str | None  # the wrapper executable name, or None if not applicable
     executable_available: bool | None  # None when the route has no external wrapper
+    source: str = "fixed"
+    model: str | None = None
+    shared_compute: bool | None = None
+    max_concurrency: int | None = None
+    thinking_default: bool | None = None
+    credential_configured: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -45,6 +53,12 @@ class RouteStatus:
             "effective_reason": self.effective_reason,
             "executable": self.executable,
             "executable_available": self.executable_available,
+            "source": self.source,
+            "model": self.model,
+            "shared_compute": self.shared_compute,
+            "max_concurrency": self.max_concurrency,
+            "thinking_default": self.thinking_default,
+            "credential_configured": self.credential_configured,
         }
 
 
@@ -63,6 +77,7 @@ def compute_status(
     config: dict,
     primary: str | None = None,
     which: Callable[[str], str | None] = shutil.which,
+    vllm_routes: dict[str, VLLMRouteInfo] | None = None,
 ) -> list[RouteStatus]:
     """Compute the effective status of every route for a declared primary.
 
@@ -98,5 +113,32 @@ def compute_status(
             configured_enabled=enabled, configured_reason=reason, route_type=rtype,
             effective=effective, effective_reason=effective_reason, executable=executable,
             executable_available=executable_available,
+        ))
+    for route in sorted(vllm_routes or {}):
+        info = (vllm_routes or {})[route]
+        entry = config.get("vllm", {}).get(route, {"enabled": True})
+        configured_enabled = bool(entry.get("enabled", True))
+        configured_reason = entry.get("reason")
+        if info.provider is None:
+            effective = "missing credential reference" if info.error_kind == "missing-credential-reference" else "invalid configuration"
+            effective_reason = info.error
+            model = shared_compute = max_concurrency = thinking_default = credential_configured = None
+        else:
+            provider = info.provider
+            effective = "available" if configured_enabled else "disabled"
+            effective_reason = configured_reason if not configured_enabled else None
+            model = provider.model
+            shared_compute = provider.shared_compute
+            max_concurrency = provider.max_concurrency
+            thinking_default = provider.thinking_default
+            credential_configured = True
+        results.append(RouteStatus(
+            route=route, provider="vllm", transport="openai-compatible",
+            billing="shared", maturity="configured", configured_enabled=configured_enabled,
+            configured_reason=configured_reason, route_type="external", effective=effective,
+            effective_reason=effective_reason, executable=None, executable_available=None,
+            source="vllm", model=model, shared_compute=shared_compute,
+            max_concurrency=max_concurrency, thinking_default=thinking_default,
+            credential_configured=credential_configured,
         ))
     return results

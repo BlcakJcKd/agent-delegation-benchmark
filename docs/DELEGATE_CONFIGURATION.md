@@ -45,11 +45,16 @@ enabled = true
 [models.flash]
 enabled = false
 reason = "weekly quota low"
+
+[vllm.lab-qwen]
+enabled = true
 ```
 
-Every provider (`codex`, `claude`, `gemini`) and every model/route (`terra`,
+Every fixed provider (`codex`, `claude`, `gemini`) and model/route (`terra`,
 `luna`, `sonnet`, `haiku`, `flash`) supports `enabled` (required) and an
-optional `reason` string. A fresh install has everything enabled — meaning
+optional `reason` string. Named local vLLM routes use the same availability
+layer under `[vllm.<route>]`; their names are discovered from the separate,
+machine-local `vllm.toml`. A fresh install has everything enabled — meaning
 "eligible in principle," not "always externally invokable"; effective
 routing still depends on the declared primary, whether the route's wrapper
 executable is on PATH, and the same-provider native-agent rule (see
@@ -58,6 +63,14 @@ pin `gpt-5.6-terra`/`gpt-5.6-luna` through the normal Codex subscription
 authentication path; they are external routes for non-Codex primaries and
 `native-only` for a Codex primary. Sonnet/Haiku have the reciprocal Claude
 native-only behavior.
+
+The vLLM entry controls only whether that named route is eligible for
+delegation. Its model, endpoint, credential reference, and runtime policy
+remain in `vllm.toml` and are never copied into `config.toml`. A missing
+availability entry for an existing local route defaults to enabled in memory,
+so adding this integration does not silently disable an operational route.
+The checkbox/list view displays the configured model and shared-compute policy
+from local configuration without contacting the server.
 
 **Provider disable overrides individual model enable.** Disabling `codex`
 makes `terra` and `luna` unavailable even though their own `enabled` stays
@@ -107,10 +120,11 @@ AI agents and scripts should use these, not the TUI below.
 ## Interactive TUI (the human interface)
 
 Running `delegate-config` with no subcommand from an interactive terminal
-opens a checkbox screen: providers and their models grouped underneath,
-`Space` to toggle, `r` to edit/clear a reason, `Enter`/`s` to save, `q` to
-cancel without writing anything. Both interfaces read and write the exact
-same config file — there is no separate state.
+opens a checkbox screen: fixed providers and routes grouped underneath,
+followed by discovered named vLLM routes with their local model and shared
+policy details. `Space` toggles a route, `r` edits/clears a reason,
+`Enter`/`s` saves, and `q` cancels without writing anything. Both interfaces
+read and write the exact same config file — there is no separate state.
 
 Run without a TTY (e.g. from a script or a non-interactive agent), it prints
 the non-interactive command list and exits nonzero instead of trying to

@@ -37,6 +37,9 @@ from .core import (
 from .paths import config_dir, state_dir
 
 VLLM_CONFIG_FILENAME = "vllm.toml"
+# Kept for compatibility with the existing user-owned path.  New successful
+# runs are not written here; the normal delegate_runs execution record is the
+# audit log for all attempts.
 VLLM_ISSUE_FILENAME = "vllm_issues.jsonl"
 VLLM_LOCK_FILENAME = "vllm.request.lock"
 DEFAULT_MAX_TOKENS = 512
@@ -77,6 +80,21 @@ class VLLMProvider:
 
 
 @dataclass(frozen=True)
+class VLLMRouteInfo:
+    """Safe local inspection result for control-plane consumers.
+
+    ``provider`` is present only when the complete route definition validates.
+    ``error`` is deliberately limited to local schema information; it never
+    contains an endpoint, credential value, or server response.
+    """
+
+    name: str
+    provider: VLLMProvider | None
+    error: str | None = None
+    error_kind: str | None = None
+
+
+@dataclass(frozen=True)
 class VLLMRunResult:
     """A result whose response text is intentionally retained only in memory."""
 
@@ -112,6 +130,32 @@ def vllm_issue_path() -> Path:
 def vllm_lock_path() -> Path:
     """Return the machine-local inter-process request lock path."""
     return state_dir() / VLLM_LOCK_FILENAME
+
+
+def vllm_route_names(path: Path | None = None) -> set[str]:
+    """Return syntactically valid named routes found in local TOML.
+
+    This is a discovery helper for the offline control plane.  It parses only
+    local configuration and never contacts the configured endpoint.
+    """
+    target = path or vllm_config_path()
+    if not target.is_file():
+        return set()
+    import tomllib
+
+    try:
+        raw = tomllib.loads(target.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return set()
+    providers = raw.get("providers", {})
+    if not isinstance(providers, dict):
+        return set()
+    return {route for route in providers if isinstance(route, str) and _NAME_RE.fullmatch(route)}
+
+
+def is_vllm_route_name(value: Any) -> bool:
+    """Return whether a value is a safe named-route identifier."""
+    return isinstance(value, str) and bool(_NAME_RE.fullmatch(value))
 
 
 def _require_string(raw: dict[str, Any], key: str, route: str) -> str:
@@ -157,54 +201,92 @@ def _validate_int(raw: dict[str, Any], key: str, default: int, route: str, *, ma
     return value
 
 
-def load_vllm_config(path: Path | None = None) -> dict[str, VLLMProvider]:
-    """Load named providers from local TOML; missing config means no routes."""
-    target = path or vllm_config_path()
-    if not target.is_file():
-        return {}
+def _load_vllm_raw(path: Path) -> dict[str, Any]:
     import tomllib
 
     try:
-        raw = tomllib.loads(target.read_text())
+        raw = tomllib.loads(path.read_text())
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise VLLMConfigurationError("vLLM provider configuration could not be parsed") from exc
     providers = raw.get("providers", {})
     if not isinstance(providers, dict):
         raise VLLMConfigurationError("vLLM config [providers] must be a table")
-    result: dict[str, VLLMProvider] = {}
+    return providers
+
+
+def _parse_provider(route: str, entry: Any) -> VLLMProvider:
+    if not isinstance(route, str) or not _NAME_RE.fullmatch(route):
+        raise VLLMConfigurationError("vLLM provider names must be short alphanumeric names with . _ or -")
+    if not isinstance(entry, dict):
+        raise VLLMConfigurationError(f"vLLM provider {route!r} must be a table")
     allowed = {
         "model", "base_url", "credential_source", "keyring_service", "keyring_provider",
         "shared_compute", "max_concurrency", "thinking_default", "max_tokens",
     }
-    for route, entry in providers.items():
+    extra = set(entry) - allowed
+    if extra:
+        raise VLLMConfigurationError(f"vLLM provider {route!r} has unsupported field(s): {sorted(extra)}")
+    model = _require_string(entry, "model", route)
+    if any(ord(char) < 32 for char in model):
+        raise VLLMConfigurationError(f"vLLM provider {route!r} model contains control characters")
+    base_url = _validate_base_url(_require_string(entry, "base_url", route), route)
+    credential_source, service, provider = _validate_credential_fields(entry, route)
+    shared_compute = entry.get("shared_compute", True)
+    if not isinstance(shared_compute, bool):
+        raise VLLMConfigurationError(f"vLLM provider {route!r} shared_compute must be a boolean")
+    max_concurrency = _validate_int(entry, "max_concurrency", 1, route)
+    if shared_compute and max_concurrency != 1:
+        raise VLLMConfigurationError("shared vLLM providers must set max_concurrency = 1")
+    thinking_default = entry.get("thinking_default", False)
+    if not isinstance(thinking_default, bool):
+        raise VLLMConfigurationError(f"vLLM provider {route!r} thinking_default must be a boolean")
+    max_tokens = _validate_int(entry, "max_tokens", DEFAULT_MAX_TOKENS, route, maximum=HARD_MAX_TOKENS)
+    return VLLMProvider(
+        name=route, model=model, base_url=base_url, credential_source=credential_source,
+        keyring_service=service, keyring_provider=provider, shared_compute=shared_compute,
+        max_concurrency=max_concurrency, thinking_default=thinking_default, max_tokens=max_tokens,
+    )
+
+
+def inspect_vllm_routes(path: Path | None = None) -> dict[str, VLLMRouteInfo]:
+    """Inspect named local routes without credential lookup or network I/O."""
+    target = path or vllm_config_path()
+    if not target.is_file():
+        return {}
+    try:
+        raw = _load_vllm_raw(target)
+    except VLLMConfigurationError:
+        return {}
+    result: dict[str, VLLMRouteInfo] = {}
+    for route, entry in raw.items():
         if not isinstance(route, str) or not _NAME_RE.fullmatch(route):
-            raise VLLMConfigurationError("vLLM provider names must be short alphanumeric names with . _ or -")
-        if not isinstance(entry, dict):
-            raise VLLMConfigurationError(f"vLLM provider {route!r} must be a table")
-        extra = set(entry) - allowed
-        if extra:
-            raise VLLMConfigurationError(f"vLLM provider {route!r} has unsupported field(s): {sorted(extra)}")
-        model = _require_string(entry, "model", route)
-        if any(ord(char) < 32 for char in model):
-            raise VLLMConfigurationError(f"vLLM provider {route!r} model contains control characters")
-        base_url = _validate_base_url(_require_string(entry, "base_url", route), route)
-        credential_source, service, provider = _validate_credential_fields(entry, route)
-        shared_compute = entry.get("shared_compute", True)
-        if not isinstance(shared_compute, bool):
-            raise VLLMConfigurationError(f"vLLM provider {route!r} shared_compute must be a boolean")
-        max_concurrency = _validate_int(entry, "max_concurrency", 1, route)
-        if shared_compute and max_concurrency != 1:
-            raise VLLMConfigurationError("shared vLLM providers must set max_concurrency = 1")
-        thinking_default = entry.get("thinking_default", False)
-        if not isinstance(thinking_default, bool):
-            raise VLLMConfigurationError(f"vLLM provider {route!r} thinking_default must be a boolean")
-        max_tokens = _validate_int(entry, "max_tokens", DEFAULT_MAX_TOKENS, route, maximum=HARD_MAX_TOKENS)
-        result[route] = VLLMProvider(
-            name=route, model=model, base_url=base_url, credential_source=credential_source,
-            keyring_service=service, keyring_provider=provider, shared_compute=shared_compute,
-            max_concurrency=max_concurrency, thinking_default=thinking_default, max_tokens=max_tokens,
-        )
+            continue
+        try:
+            provider = _parse_provider(route, entry)
+        except VLLMConfigurationError as exc:
+            missing_reference = (
+                isinstance(entry, dict)
+                and "credential_source" not in entry
+            ) or (
+                isinstance(entry, dict)
+                and entry.get("credential_source") == "keyring"
+                and ("keyring_service" not in entry or "keyring_provider" not in entry)
+            )
+            result[route] = VLLMRouteInfo(
+                route, None, "credential reference is missing" if missing_reference else "invalid vLLM route configuration",
+                "missing-credential-reference" if missing_reference else "invalid-configuration",
+            )
+        else:
+            result[route] = VLLMRouteInfo(route, provider)
     return result
+
+
+def load_vllm_config(path: Path | None = None) -> dict[str, VLLMProvider]:
+    """Load named providers from local TOML; missing config means no routes."""
+    target = path or vllm_config_path()
+    if not target.is_file():
+        return {}
+    return {route: _parse_provider(route, entry) for route, entry in _load_vllm_raw(target).items()}
 
 
 def _resolve_credential(provider: VLLMProvider) -> str:
@@ -527,20 +609,21 @@ def run_vllm_consultation(
         "stderr_file": "stderr.txt",
     }
     _record_execution(record_dir, execution)
-    _append_issue({
-        "adapter": "openai-compatible-vllm",
-        "route": route,
-        "provider_type": "openai_compatible_vllm",
-        "client_version": "agent-delegation-benchmark",
-        "model": provider.model,
-        "operation_class": "bounded-chat-completion",
-        "result_state": result_state,
-        "http_status": http_status,
-        "duration_seconds": elapsed,
-        "timeout": timed_out,
-        "thinking": effective_thinking,
-        "error_category": error_category,
-        "retry": False,
-        "fallback": None,
-    }, issue_path)
+    if result_state != "text-returned":
+        _append_issue({
+            "adapter": "openai-compatible-vllm",
+            "route": route,
+            "provider_type": "openai_compatible_vllm",
+            "client_version": "agent-delegation-benchmark",
+            "model": provider.model,
+            "operation_class": "bounded-chat-completion",
+            "result_state": result_state,
+            "http_status": http_status,
+            "duration_seconds": elapsed,
+            "timeout": timed_out,
+            "thinking": effective_thinking,
+            "error_category": error_category,
+            "retry": False,
+            "fallback": None,
+        }, issue_path)
     return VLLMRunResult(exit_code, record_dir, response, stderr)

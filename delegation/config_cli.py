@@ -26,8 +26,17 @@ from typing import Any
 
 from . import routing
 from .config import load_config, save_config, set_enabled
+from .vllm import inspect_vllm_routes
 
 _SECTION_FOR = {**{m: "models" for m in routing.MODELS}, **{p: "providers" for p in routing.PROVIDERS}}
+
+
+def _route_section(route: str) -> str:
+    if route in _SECTION_FOR:
+        return _SECTION_FOR[route]
+    if route in load_config().get("vllm", {}):
+        return "vllm"
+    raise ValueError(f"unknown delegation route: {route!r}")
 
 
 def _describe_change(name: str, before: dict[str, Any], after: dict[str, Any]) -> str:
@@ -66,15 +75,34 @@ def _cmd_list(args: argparse.Namespace) -> int:
             state = "enabled" if entry["enabled"] else "disabled"
             reason = f' (reason: "{entry["reason"]}")' if entry.get("reason") else ""
             print(f"  {name:<8} {state}{reason}")
+    routes = inspect_vllm_routes()
+    if routes or config.get("vllm"):
+        print("vLLM routes:")
+        for name in sorted(set(routes) | set(config.get("vllm", {}))):
+            entry = config.get("vllm", {}).get(name, {"enabled": True})
+            state = "enabled" if entry["enabled"] else "disabled"
+            reason = f' (reason: "{entry["reason"]}")' if entry.get("reason") else ""
+            print(f"  [{'x' if entry['enabled'] else ' '}] {name}: {state}{reason}")
+            info = routes.get(name)
+            if info and info.provider:
+                provider = info.provider
+                print(f"      model: {provider.model}")
+                print("      type: shared vLLM / OpenAI-compatible")
+                print(f"      shared compute: {'yes' if provider.shared_compute else 'no'}")
+                print(f"      concurrency: {provider.max_concurrency}")
+                print(f"      thinking default: {'on' if provider.thinking_default else 'off'}")
+                print("      credential: configured reference")
+            elif info:
+                print(f"      state: {info.error_kind or 'invalid configuration'}")
     return 0
 
 
 def _cmd_enable(args: argparse.Namespace) -> int:
-    return _apply(args.route, "models", True, None, args.json)
+    return _apply(args.route, _route_section(args.route), True, None, args.json)
 
 
 def _cmd_disable(args: argparse.Namespace) -> int:
-    return _apply(args.route, "models", False, args.reason, args.json)
+    return _apply(args.route, _route_section(args.route), False, args.reason, args.json)
 
 
 def _cmd_enable_provider(args: argparse.Namespace) -> int:
@@ -95,13 +123,14 @@ def _parser() -> argparse.ArgumentParser:
     p_list.add_argument("--json", action="store_true")
     p_list.set_defaults(func=_cmd_list)
 
-    p_enable = sub.add_parser("enable", help="enable a route (model)")
-    p_enable.add_argument("route", choices=tuple(routing.MODELS))
+    route_choices = tuple(sorted(set(routing.MODELS) | set(load_config().get("vllm", {}))))
+    p_enable = sub.add_parser("enable", help="enable a route (model or named vLLM route)")
+    p_enable.add_argument("route", choices=route_choices)
     p_enable.add_argument("--json", action="store_true")
     p_enable.set_defaults(func=_cmd_enable)
 
-    p_disable = sub.add_parser("disable", help="disable a route (model)")
-    p_disable.add_argument("route", choices=tuple(routing.MODELS))
+    p_disable = sub.add_parser("disable", help="disable a route (model or named vLLM route)")
+    p_disable.add_argument("route", choices=route_choices)
     p_disable.add_argument("--reason", help="human-readable reason, e.g. 'weekly quota low'")
     p_disable.add_argument("--json", action="store_true")
     p_disable.set_defaults(func=_cmd_disable)

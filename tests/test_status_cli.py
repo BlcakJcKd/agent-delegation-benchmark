@@ -7,6 +7,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 from delegation.config import default_config, set_enabled
 from delegation.status_cli import build_report, main
@@ -97,7 +98,8 @@ class BuildReportTests(unittest.TestCase):
 class MainCliTests(unittest.TestCase):
     def test_json_flag_emits_valid_json_with_routes(self):
         buf = io.StringIO()
-        with redirect_stdout(buf):
+        with patch("delegation.status_cli.load_config", return_value=default_config()), \
+             patch("delegation.status_cli.inspect_vllm_routes", return_value={}), redirect_stdout(buf):
             code = main(["--primary", "codex", "--json"])
         self.assertEqual(code, 0)
         payload = json.loads(buf.getvalue())

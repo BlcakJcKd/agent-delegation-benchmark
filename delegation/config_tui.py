@@ -23,6 +23,7 @@ from typing import Any
 
 from . import routing
 from .config import load_config, save_config
+from .vllm import VLLMRouteInfo, inspect_vllm_routes
 
 PROVIDER_ORDER: tuple[str, ...] = ("gemini", "claude", "codex", "deepseek", "minimax")
 PROVIDER_LABELS: dict[str, str] = {
@@ -44,9 +45,13 @@ class Row:
     enabled: bool
     reason: str | None
     provider: str | None  # owning provider name for a model row; None for a provider row
+    details: tuple[str, ...] = ()
 
 
-def build_rows(config: dict[str, Any]) -> list[Row]:
+def build_rows(
+    config: dict[str, Any],
+    vllm_routes: dict[str, VLLMRouteInfo] | None = None,
+) -> list[Row]:
     rows: list[Row] = []
     for provider in PROVIDER_ORDER:
         entry = config["providers"][provider]
@@ -60,6 +65,32 @@ def build_rows(config: dict[str, Any]) -> list[Row]:
                 "model", "models", model, MODEL_LABELS[model],
                 m_entry["enabled"], m_entry.get("reason"), provider,
             ))
+    # Keep this pure by default; the interactive entry point supplies the
+    # machine-local inspection explicitly.  This also keeps library callers
+    # and tests independent of whichever vllm.toml happens to exist.
+    routes = vllm_routes or {}
+    for name in sorted(set(routes) | set(config.get("vllm", {}))):
+        entry = config.get("vllm", {}).get(name, {"enabled": True})
+        info = routes.get(name)
+        details: tuple[str, ...]
+        if info and info.provider:
+            provider = info.provider
+            details = (
+                f"model: {provider.model}",
+                "type: shared vLLM / OpenAI-compatible",
+                f"shared compute: {'yes' if provider.shared_compute else 'no'}",
+                f"concurrency: {provider.max_concurrency}",
+                f"thinking default: {'on' if provider.thinking_default else 'off'}",
+                "credential: configured reference",
+            )
+        elif info:
+            details = (f"state: {info.error_kind or 'invalid configuration'}",)
+        else:
+            details = ("state: local vLLM route definition missing",)
+        rows.append(Row(
+            "vllm", "vllm", name, name, entry.get("enabled", True),
+            entry.get("reason"), None, details,
+        ))
     return rows
 
 
@@ -80,6 +111,7 @@ def set_reason(rows: list[Row], index: int, reason: str | None) -> list[Row]:
 def rows_to_config(original: dict[str, Any], rows: list[Row]) -> dict[str, Any]:
     updated = {section: {n: dict(e) for n, e in entries.items()} for section, entries in original.items()}
     for row in rows:
+        updated.setdefault(row.section, {})
         entry: dict[str, Any] = {"enabled": row.enabled}
         if row.reason:
             entry["reason"] = row.reason
@@ -90,7 +122,7 @@ def rows_to_config(original: dict[str, Any], rows: list[Row]) -> dict[str, Any]:
 def diff_summary(original: dict[str, Any], rows: list[Row]) -> list[str]:
     lines = []
     for row in rows:
-        before = original[row.section][row.name]
+        before = original.get(row.section, {}).get(row.name, {"enabled": True})
         before_reason = before.get("reason") or None
         if before.get("enabled", True) != row.enabled or before_reason != row.reason:
             before_state = "enabled" if before.get("enabled", True) else "disabled"
@@ -100,6 +132,10 @@ def diff_summary(original: dict[str, Any], rows: list[Row]) -> list[str]:
     return lines
 
 
+def _row_height(row: Row) -> int:
+    return 1 + len(row.details)
+
+
 def _render(stdscr, rows: list[Row], cursor: int) -> None:
     import curses
 
@@ -107,13 +143,20 @@ def _render(stdscr, rows: list[Row], cursor: int) -> None:
     height, width = stdscr.getmaxyx()
     stdscr.addstr(0, 0, "Agent Delegation Configuration"[: max(1, width - 1)], curses.A_BOLD)
     y = 2
-    for i, row in enumerate(rows):
+    available = max(1, height - 6)
+    start = 0
+    while start < cursor and sum(_row_height(row) for row in rows[start:cursor]) >= available:
+        start += 1
+    for i in range(start, len(rows)):
+        row = rows[i]
         if y >= height - 6:
             break
         indent = "    " if row.kind == "model" else ""
         box = "[x]" if row.enabled else "[ ]"
-        reason = f"   {row.reason}" if (row.reason and row.kind == "provider") else ""
+        reason = f"   {row.reason}" if (row.reason and row.kind in {"provider", "vllm"}) else ""
         name = row.name if row.kind == "provider" else row.provider
+        if row.kind == "vllm":
+            name = row.label
         # PAYG providers/routes are visually tagged so they're never
         # mistaken for the existing subscription/quota-based ones.
         badge = "   PAYG · experimental" if routing.PROVIDER_BILLING.get(name) == "payg" else ""
@@ -124,6 +167,15 @@ def _render(stdscr, rows: list[Row], cursor: int) -> None:
         except Exception:
             pass
         y += 1
+        if row.details:
+            for detail in row.details:
+                if y >= height - 6:
+                    break
+                try:
+                    stdscr.addstr(y, 4, detail[: max(1, width - 5)], curses.A_DIM)
+                except Exception:
+                    pass
+                y += 1
     footer_y = max(0, height - 3)
     footer = "↑/↓ navigate  Space toggle  r reason  Enter/s save  q cancel"
     try:
@@ -180,7 +232,7 @@ def run_interactive_config() -> int:
     import curses
 
     config = load_config()
-    rows = build_rows(config)
+    rows = build_rows(config, inspect_vllm_routes())
     result = curses.wrapper(_loop, rows)
     if result is None:
         print("delegate-config: cancelled, no changes made")

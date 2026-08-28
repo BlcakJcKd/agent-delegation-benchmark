@@ -48,15 +48,31 @@ not written to the evidence directory.
 
 ## Local reliability records
 
-Every attempted request appends one redacted JSON object to
+Failed and incomplete requests append one redacted JSON object to
 `$XDG_STATE_HOME/agent-delegation/vllm_issues.jsonl` with mode `0600` (normally
-`~/.local/state/agent-delegation/vllm_issues.jsonl`). It records timestamp,
+`~/.local/state/agent-delegation/vllm_issues.jsonl`). Successful requests are
+represented by their normal `delegate_runs/<run>/execution.json` audit record;
+they do not create an issue entry. Existing historical success entries in the
+compatibility-named file are retained and are not rewritten or deleted.
+Issue records contain timestamp,
 local machine label, adapter, route/model, operation class, result state, HTTP
 status, duration, timeout, thinking mode, sanitized error category, and the
 fact that no retry/fallback occurred. It does not record the prompt, response,
 authorization header, response body, or source files. Users can use the time,
 route, and category from this file when reporting connection errors, repeated
 failures, or poor responses to a service administrator.
+
+## Availability control plane
+
+`delegate-config` discovers named routes from `vllm.toml` and stores only their
+enabled/disabled preference in `config.toml` under `[vllm.<route>]`. It displays
+the configured model and shared-compute policy offline; it never queries
+`/models` or the completion endpoint merely to render settings. `delegate-status`
+reports enabled routes as available when their local schema is valid, and
+separately reports disabled, invalid-configuration, or missing-credential-
+reference states. It does not resolve credential values or perform a health
+check in ordinary mode. The full Codex/Qwen harness, if present, is a separate
+local coding-agent command and is not a delegation route.
 
 ## Codex harness compatibility
 
