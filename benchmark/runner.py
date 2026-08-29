@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import random
+import signal
 import shutil
 import subprocess
 import sys
@@ -245,6 +246,54 @@ def randomized_execution_order(
     return orders
 
 
+def _run_command_with_timeout(
+    command: list[str], *, cwd: Path, env: dict[str, str], timeout: int,
+) -> tuple[int | None, bool, str, str]:
+    """Run one candidate and clean up its descendants if it times out.
+
+    A plain ``subprocess.run(timeout=...)`` kills only the direct child.  A
+    coding-agent CLI can leave shells, interpreters, or other tools behind,
+    so POSIX candidates receive a private process session and the whole
+    session is terminated on timeout.  The parent benchmark process is never
+    part of that session.
+    """
+    popen_kwargs: dict[str, Any] = {
+        "cwd": cwd,
+        "text": True,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "env": env,
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    process = subprocess.Popen(command, **popen_kwargs)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        return process.returncode, False, stdout or "", stderr or ""
+    except subprocess.TimeoutExpired as exc:
+        previous_stdout = exc.stdout or ""
+        previous_stderr = exc.stderr or ""
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        else:
+            process.terminate()
+        try:
+            stdout, stderr = process.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            stdout, stderr = process.communicate()
+        return None, True, stdout or previous_stdout, stderr or previous_stderr
+
+
 def execute(
     run_label: str,
     task_ids: list[str],
@@ -293,15 +342,12 @@ def execute(
             before = _snapshot(workspace)
             command = adapters[agent].command(workspace, prompt, result_dir, task_id=task_id)
             started = time.monotonic()
-            try:
-                completed = subprocess.run(
-                    command, cwd=workspace, text=True, capture_output=True, timeout=timeout,
-                    env={**os.environ, "BENCHMARK_WORKSPACE": str(workspace)},
-                )
-                exit_code, timed_out, stdout, stderr = completed.returncode, False, completed.stdout, completed.stderr
-            except subprocess.TimeoutExpired as exc:
-                exit_code, timed_out = None, True
-                stdout, stderr = exc.stdout or "", exc.stderr or ""
+            exit_code, timed_out, stdout, stderr = _run_command_with_timeout(
+                command,
+                cwd=workspace,
+                timeout=timeout,
+                env={**os.environ, "BENCHMARK_WORKSPACE": str(workspace)},
+            )
             elapsed = time.monotonic() - started
             after = _snapshot(workspace)
             changed = sorted({path for path in set(before) | set(after) if before.get(path) != after.get(path)})

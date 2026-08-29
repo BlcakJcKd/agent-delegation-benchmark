@@ -1,7 +1,9 @@
 import json
+import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -130,6 +132,38 @@ class CommandAgentRunnerTests(unittest.TestCase):
             self.assertEqual(record["harness_failure_reasons"], ["timeout", "nonzero_exit"])
             self.assertFalse(record["retry"])
             self.assertIsNone(record["fallback"])
+
+    def test_timeout_terminates_command_descendants(self):
+        if os.name != "posix":
+            self.skipTest("process-group cleanup test requires POSIX sessions")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_frozen_material(root)
+            child_pid = root / "child.pid"
+            script = (
+                "import subprocess, time; "
+                f"p=subprocess.Popen([{sys.executable!r}, '-c', 'import time; time.sleep(5)']); "
+                f"open({str(child_pid)!r}, 'w').write(str(p.pid)); "
+                "time.sleep(5)"
+            )
+            import benchmark.runner as runner
+            old = runner.ADAPTERS.get("fake-tree-slow")
+            runner.ADAPTERS["fake-tree-slow"] = CommandAgentAdapter(
+                name="fake-tree-slow", command_argv=(sys.executable,), fixed_args=("-c", script)
+            )
+            try:
+                self.assertEqual(execute("command-tree-timeout", ["research_python"], ["fake-tree-slow"], root, timeout=1), 1)
+            finally:
+                if old is None:
+                    del runner.ADAPTERS["fake-tree-slow"]
+                else:
+                    runner.ADAPTERS["fake-tree-slow"] = old
+            child = int(child_pid.read_text())
+            for _ in range(40):
+                if not Path(f"/proc/{child}").exists():
+                    break
+                time.sleep(0.05)
+            self.assertFalse(Path(f"/proc/{child}").exists())
 
     def test_nonzero_exit_and_missing_executable_are_not_substituted(self):
         with tempfile.TemporaryDirectory() as temporary:
