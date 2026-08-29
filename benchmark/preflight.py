@@ -118,6 +118,9 @@ def _adapter_command_problems(adapter: Adapter, task_id: str | None = None) -> l
             problems.append("agy -p must directly precede prompt")
         if any(flag in command[command.index("-p") + 1:] for flag in ("--output-format", "--mode", "--sandbox", "--model")):
             problems.append("agy option occurs after -p")
+    if adapter.name not in {"codex", "claude", "agy", "deepseek-pro", "deepseek-flash", "minimax-m3"}:
+        if not command or not adapter.executable:
+            problems.append("command-agent argv is empty")
     return problems
 
 
@@ -195,11 +198,17 @@ def run_preflight(
     for name, adapter in adapters.items():
         available, detail = adapter.availability()
         checks.append({"name": f"{name}: executable", "ok": available, "detail": detail})
-        if available:
+        if available and name in HELP_REQUIREMENTS:
             code, stdout, stderr = _capture([adapter.executable, "--version"])
             versions[name] = (stdout or stderr).strip()
             checks.append({"name": f"{name}: version", "ok": code == 0, "detail": versions[name]})
-        for help_command, required in HELP_REQUIREMENTS[name]:
+        elif available:
+            checks.append({
+                "name": f"{name}: version/help probe",
+                "ok": True,
+                "detail": "not run for generic command-agent; executable lookup only",
+            })
+        for help_command, required in HELP_REQUIREMENTS.get(name, ()):
             code, stdout, stderr = _capture(help_command)
             help_text = stdout + stderr
             missing = [item for item in required if item not in help_text]

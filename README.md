@@ -139,6 +139,17 @@ python -m benchmark.runner preflight \
 Only after a passing preflight may a run start. `--timeout` defaults to 900 seconds per
 contestant/task. A reused run label is rejected, preserving the original evidence.
 
+### Machine-local command agents
+
+The benchmark also accepts generic, machine-local coding-agent commands
+through `$XDG_CONFIG_HOME/agent-delegation/benchmark.toml` (see
+`provider_templates/benchmark.toml.example`). Each entry provides a candidate
+name, an argv `command`, and optional fixed `args`; the runner appends the
+unchanged task prompt, uses the copied task workspace as `cwd`, and retains the
+same timeout, scoring, and stdout/stderr evidence as built-in adapters. This
+file is local configuration and must not be committed. No shell interpolation,
+credential field, provider fallback, or automatic retry is provided.
+
 ## Adapters and safety
 
 The adapters reflect the locally inspected help for the installed versions:

@@ -1,0 +1,8 @@
+# Optional machine-local benchmark coding-agent commands.
+# Keep this file outside the repository when it contains a local executable.
+# Commands are argv arrays, never shell strings. The frozen task prompt is
+# appended as the final argument and the copied task workspace is the cwd.
+
+[command_agents.local-coding]
+command = ["your-coding-agent"]
+args = ["--non-interactive"]

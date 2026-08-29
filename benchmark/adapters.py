@@ -219,6 +219,32 @@ class MiniMaxAdapter(Adapter):
         }
 
 
+@dataclass(frozen=True)
+class CommandAgentAdapter(Adapter):
+    """Run a machine-local coding-agent command in the task workspace."""
+
+    command_argv: tuple[str, ...] = field(default_factory=tuple)
+    fixed_args: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def executable(self) -> str:
+        return self.command_argv[0] if self.command_argv else ""
+
+    def command(self, workspace: Path, prompt: str, output_dir: Path, task_id: str | None = None) -> list[str]:
+        return [*self.command_argv, *self.fixed_args, prompt]
+
+    def describe(self, task_id: str | None = None) -> dict[str, object]:
+        return {
+            **super().describe(),
+            "adapter": "command-agent",
+            "command_executable": self.executable,
+            "fixed_argument_count": len(self.fixed_args),
+            "cwd": "benchmark task workspace",
+            "prompt_delivery": "final argv item",
+            "output": "captured stdout/stderr",
+        }
+
+
 ADAPTERS: dict[str, Adapter] = {
     "codex": CodexAdapter(),
     "claude": ClaudeAdapter(),

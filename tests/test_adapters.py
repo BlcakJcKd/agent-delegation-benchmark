@@ -5,6 +5,7 @@ from benchmark.adapters import (
     ADAPTERS,
     AntigravityAdapter,
     ClaudeAdapter,
+    CommandAgentAdapter,
     CodexAdapter,
     DeepSeekAdapter,
     MiniMaxAdapter,
@@ -20,6 +21,18 @@ RESULT = Path("/tmp/benchmark result")
 
 
 class AdapterArgvTests(unittest.TestCase):
+    def test_command_agent_uses_argv_cwd_and_final_prompt_contract(self):
+        adapter = CommandAgentAdapter(
+            name="local-coding",
+            command_argv=("coding-agent",),
+            fixed_args=("--non-interactive",),
+        )
+        command = adapter.command(WORKSPACE, PROMPT, RESULT, task_id="research_python")
+        self.assertEqual(command, ["coding-agent", "--non-interactive", PROMPT])
+        self.assertEqual(adapter.executable, "coding-agent")
+        self.assertEqual(adapter.describe()["adapter"], "command-agent")
+        self.assertEqual(adapter.describe()["prompt_delivery"], "final argv item")
+
     def test_codex_uses_directly_supported_exec_flags(self):
         command = CodexAdapter(model="chosen-codex", reasoning_effort="high").command(WORKSPACE, PROMPT, RESULT)
         self.assertEqual(command[-1], PROMPT)

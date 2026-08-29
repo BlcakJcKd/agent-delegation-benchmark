@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .adapters import ADAPTERS, Adapter, configured_adapters
+from .command_agents import CommandAgentConfigurationError, load_command_agents
 from .evaluate import evaluate
 from .freeze import verify_lock
 from .preflight import display_preflight, parse_models, run_preflight
@@ -340,6 +341,9 @@ def execute(
                 "required_output_missing": required_output_missing,
                 "harness_failure_reasons": failure_reasons,
                 "execution_status": "harness_failure" if hard_failure else "completed",
+                "attempt": 1,
+                "retry": False,
+                "fallback": None,
             }
             _write_json(result_dir / "execution.json", record)
             assessment = evaluate(task_id, workspace, root)
@@ -408,9 +412,17 @@ def _add_common_selection_arguments(parser: argparse.ArgumentParser, include_mod
             "--source-tier-reference", choices=tuple(TIERS),
             help="existing tier whose frozen task evidence is being crossed over",
         )
+    parser.add_argument(
+        "--command-agent-config", type=Path,
+        help="optional machine-local TOML mapping for generic command agents "
+             "(default: XDG config agent-delegation/benchmark.toml)",
+    )
 
 
-def _selection(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tuple[list[str], list[str]]:
+def _selection(
+    args: argparse.Namespace, parser: argparse.ArgumentParser,
+    available_adapters: dict[str, Adapter] = ADAPTERS,
+) -> tuple[list[str], list[str]]:
     agents, task_ids = _split_csv(args.agents), _split_csv(args.tasks)
     if not agents:
         parser.error("at least one agent must be selected")
@@ -418,7 +430,7 @@ def _selection(args: argparse.Namespace, parser: argparse.ArgumentParser) -> tup
         parser.error("agents must not contain duplicates")
     if not task_ids:
         parser.error("at least one task must be selected")
-    bad_agents = sorted(set(agents) - set(ADAPTERS))
+    bad_agents = sorted(set(agents) - set(available_adapters))
     if bad_agents:
         parser.error("unknown agents: " + ", ".join(bad_agents))
     for task_id in task_ids:
@@ -465,7 +477,9 @@ def _parse_task_agents(
 
 def _tier_or_custom_adapters(
     args: argparse.Namespace, agents: list[str], parser: argparse.ArgumentParser,
+    command_agents: dict[str, Adapter] | None = None,
 ) -> tuple[dict[str, Adapter], list[str], Tier | None]:
+    command_agents = command_agents or {}
     if args.tier:
         if args.models or args.codex_reasoning_effort or args.claude_reasoning_effort:
             parser.error("--tier supplies fixed models/efforts; do not combine it with --models or effort overrides")
@@ -480,14 +494,20 @@ def _tier_or_custom_adapters(
             codex_reasoning_effort=tier.codex_reasoning_effort,
             claude_reasoning_effort=tier.claude_reasoning_effort,
         ), [], tier
-    models, model_errors = parse_models(args.models, agents)
+    builtin_agents = [agent for agent in agents if agent in ADAPTERS]
+    if builtin_agents:
+        models, model_errors = parse_models(args.models, builtin_agents)
+    else:
+        models, model_errors = {}, []
     unknown_model_agents = sorted(set(models) - set(agents))
     model_errors.extend(f"model supplied for unselected agent: {agent}" for agent in unknown_model_agents)
-    return configured_adapters(
+    adapters = configured_adapters(
         models,
         codex_reasoning_effort=args.codex_reasoning_effort,
         claude_reasoning_effort=args.claude_reasoning_effort,
-    ), model_errors, None
+    )
+    adapters.update({name: command_agents[name] for name in agents if name in command_agents})
+    return adapters, model_errors, None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -511,11 +531,19 @@ def main(argv: list[str] | None = None) -> int:
         for task in TASKS:
             print(f"{task.id}\t{task.title}" if args.verbose else task.id)
         return 0
-    agents, task_ids = _selection(args, parser)
+    try:
+        command_agents = load_command_agents(getattr(args, "command_agent_config", None))
+    except CommandAgentConfigurationError as exc:
+        parser.error(str(exc))
+    collisions = sorted(set(command_agents) & set(ADAPTERS))
+    if collisions:
+        parser.error("command-agent names collide with built-in agents: " + ", ".join(collisions))
+    available_adapters = {**ADAPTERS, **command_agents}
+    agents, task_ids = _selection(args, parser, available_adapters)
     task_agents = _parse_task_agents(args.task_agents, task_ids, agents, parser)
     if bool(args.crossover) != bool(args.source_tier_reference):
         parser.error("--crossover and --source-tier-reference must be supplied together")
-    adapters, model_errors, tier = _tier_or_custom_adapters(args, agents, parser)
+    adapters, model_errors, tier = _tier_or_custom_adapters(args, agents, parser, command_agents)
     selected_adapters = {agent: adapters[agent] for agent in agents}
     report = run_preflight(repository_root(), task_ids, selected_adapters, model_errors, task_agents)
     report["benchmark_tier"] = tier.metadata() if tier else None
