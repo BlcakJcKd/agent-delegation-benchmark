@@ -69,8 +69,10 @@ delegation. Its model, endpoint, credential reference, and runtime policy
 remain in `vllm.toml` and are never copied into `config.toml`. A missing
 availability entry for an existing local route defaults to enabled in memory,
 so adding this integration does not silently disable an operational route.
-The checkbox/list view displays the configured model and shared-compute policy
-from local configuration without contacting the server.
+The checkbox/list view displays the configured model, shared-compute policy,
+and local default output budget/cap from local configuration without
+contacting the server. These local limits are not remote server or model
+capability claims.
 
 **Provider disable overrides individual model enable.** Disabling `codex`
 makes `terra` and `luna` unavailable even though their own `enabled` stays

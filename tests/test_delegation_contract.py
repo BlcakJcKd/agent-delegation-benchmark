@@ -101,6 +101,7 @@ class CanonicalGuidanceTests(unittest.TestCase):
             "ask-deepseek-flash",
             "ask-deepseek-pro",
             "ask-minimax-m3",
+            "ask-vllm <named-route>",
             "textual consultation returned on stdout",
             "Do not wait for or search for a review file",
             "retry at most once",
@@ -113,6 +114,7 @@ class CanonicalGuidanceTests(unittest.TestCase):
             "SAME-PROVIDER WORK USES NATIVE AGENTS",
             "Codex/OpenAI primary",
             "Claude Code/Anthropic primary",
+            "Optional machine-local coding-agent harnesses",
         ):
             self.assertIn(required, skill)
 

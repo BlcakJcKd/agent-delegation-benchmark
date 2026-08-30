@@ -150,6 +150,11 @@ same timeout, scoring, and stdout/stderr evidence as built-in adapters. This
 file is local configuration and must not be committed. No shell interpolation,
 credential field, provider fallback, or automatic retry is provided.
 
+This is a benchmark-only, copied-workspace mechanism, not a general
+write-capable `ask-*` delegation route. A user must explicitly select the
+local command agent and its workspace/sandbox scope; the primary owns review,
+tests, integration, and final correctness.
+
 ## Adapters and safety
 
 The adapters reflect the locally inspected help for the installed versions:

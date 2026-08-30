@@ -4,6 +4,7 @@ __pycache__/
 build/
 runs/
 delegate_runs/
+/vllm_issues.jsonl
 
 # Claude Code local session/runtime state (not project source).
 .claude/
@@ -11,6 +12,14 @@ delegate_runs/
 # Administrator-only ground truth and blind-review identity maps.
 private_admin/
 **/blind_map.json
+
+# Delegation runtime configuration and private harness scratch copies belong in
+# XDG user state, never in this source checkout.
+/vllm.toml
+/benchmark.toml
+*.local.toml
+*.private.toml
+private_launchers/
 
 # Local environment and credential material.  These extensions are not used by
 # the benchmark's public fixtures or source tree.

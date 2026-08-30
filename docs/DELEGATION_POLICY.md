@@ -258,9 +258,13 @@ No wrapper uses `dangerously-skip-permissions`, `bypassPermissions`, broad
 
 ## Current limitations and implementation delegation
 
-The current foundation does **not** implement writing delegation. That must be
-a separately approved mode with a new copied workspace, task-specific command
-allowlist, diff review, tests, and an explicit hand-off contract. In particular,
+The user-level `ask-*` foundation does **not** implement writing delegation.
+The benchmark separately supports an optional, machine-local command-agent
+adapter for explicitly selected copied-workspace experiments; it is not a
+general delegation route or an automatic fallback. Any future general
+write-capable delegation mode must be separately approved with a copied
+workspace, task-specific command allowlist, diff review, tests, and an
+explicit hand-off contract. In particular,
 Claude's documented CLI exposes no Codex-equivalent hard workspace-read
 sandbox; its CWD and explicit tools are operational controls, not a complete
 filesystem containment guarantee. Antigravity's exact plan/sandbox semantics

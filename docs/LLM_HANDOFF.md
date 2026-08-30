@@ -48,6 +48,12 @@ delegate-status`), you do not need this repository at all to use it — see
   respect it, don't mutate it on your own judgement.
 - External consultation is read-only by default; no wrapper here grants a
   delegate write access.
+- A configured `ask-vllm <named-route>` is also read-only and bounded. Check
+  its local default/cap in `delegate-status`; use `--live` only when a
+  substantial shared-route workload justifies the GET-only scheduler check.
+- Optional machine-local benchmark command agents can be write-capable only
+  in a copied workspace. They are not `ask-*` routes: use one only when the
+  user explicitly identifies it and retain primary diff/test verification.
 - `ask-deepseek-pro`/`ask-deepseek-flash`/`ask-minimax-m3` are experimental
   PAYG routes, now evidence-guided (see
   [`docs/PAYG_BENCHMARK_2026-08.md`](PAYG_BENCHMARK_2026-08.md)) but still

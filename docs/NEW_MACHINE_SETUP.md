@@ -53,11 +53,11 @@ scripts/install-user-delegation.sh
 ```
 
 This runs the test suite and no-model preflight, `pipx install`s the
-package (producing `ask-flash`, `ask-haiku`, `ask-sonnet`,
-`ask-deepseek-pro`, `ask-deepseek-flash`, `ask-minimax-m3`,
-`delegate-status`, `delegate-config`), creates a default config only if one
-doesn't already exist, and installs the delegation skill. No provider
-authentication, no model calls. See
+package (producing `ask-terra`, `ask-luna`, `ask-flash`, `ask-haiku`,
+`ask-sonnet`, `ask-deepseek-pro`, `ask-deepseek-flash`, `ask-minimax-m3`,
+`ask-vllm`, `delegate-status`, and `delegate-config`), creates a default
+config only if one doesn't already exist, and installs the delegation skill.
+No provider authentication, no model calls. See
 [USER_INSTALLATION.md](USER_INSTALLATION.md) for the full architecture.
 
 ## 4. Provider CLI prerequisites
@@ -158,6 +158,16 @@ Confirm all 8 routes appear, with `deepseek-pro`/`deepseek-flash`/
 `minimax-m3` reported `payg`/`experimental` and `disabled` (reason
 `experimental PAYG; benchmark pending`) unless you've deliberately enabled
 them via `delegate-config` — see step 13.
+
+### Optional named shared-vLLM routes
+
+Named OpenAI-compatible vLLM routes are optional, user-owned local
+configuration; the installer neither creates nor alters them. If the user
+wants one, follow [VLLM_DELEGATES.md](VLLM_DELEGATES.md) and keep endpoint and
+credential material out of the checkout. `delegate-status` shows the local
+default output budget and cap offline. `delegate-status --live` is an
+optional GET-only scheduler check for a configured route, not an inference or
+GPU-utilization probe; use it deliberately before substantial shared work.
 
 ## 11. Bubblewrap/user-namespace validation
 

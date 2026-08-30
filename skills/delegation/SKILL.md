@@ -1,12 +1,11 @@
 ---
 name: delegation
 description: >
-  Teaches an agent that read-only delegation to another model (Gemini Flash,
-  Claude Haiku/Sonnet) is available as installed global commands, when it's
-  worth using, and how to check what's currently eligible. Use when deciding
-  whether to consult another model, when the user asks about delegation
-  options, or before invoking ask-flash/ask-haiku/ask-sonnet/ask-terra/ask-luna/
-  delegate-status.
+  Teaches an agent how to use installed read-only external consultation
+  commands and configured shared vLLM routes, when they are worth using, and
+  how to check what is currently eligible. Use when deciding whether to
+  consult another model, when the user asks about delegation options, or
+  before invoking an ask-* wrapper or delegate-status.
 ---
 
 # Delegation
@@ -65,6 +64,10 @@ Use this sequence for every external consultation:
      --prompt-file /absolute/consultation-task.md --primary claude-code
    ask-luna --workspace /absolute/scoped-copy \
      --prompt-file /absolute/consultation-task.md --primary claude-code
+   ask-haiku --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary codex
+   ask-sonnet --workspace /absolute/scoped-copy \
+     --prompt-file /absolute/consultation-task.md --primary codex
    ask-deepseek-flash --workspace /absolute/scoped-copy \
      --prompt-file /absolute/consultation-task.md --primary codex
    ask-deepseek-pro --workspace /absolute/scoped-copy \
@@ -266,6 +269,14 @@ coding-agent sessions. The direct adapter sends one bounded Chat Completions
 request, defaults to `enable_thinking = false`, uses a machine-local
 single-request lock, and has no automatic retry or cloud substitution.
 
+Its exact invocation differs slightly from the provider wrappers: the route
+is positional and there is no `--primary` flag.
+
+```bash
+ask-vllm <named-route> --workspace /absolute/scoped-copy \
+  --prompt-file /absolute/minimal-task.md
+```
+
 Shared-compute routes must respect their configured concurrency and runtime
 policy. In particular, do not perform speculative fan-out, do not substitute
 another provider automatically, and respect a configured non-thinking default.
@@ -295,6 +306,31 @@ fixtures, logs, or diagnostics. See
 reporting contract. A Codex primary-model configuration is a separate audit:
 do not assume a Chat Completions-only endpoint is compatible with Codex's
 Responses transport.
+
+## Optional machine-local coding-agent harnesses
+
+Some users may separately configure a local, write-capable coding-agent
+harness for controlled benchmark work. It is not an `ask-*` route, is not
+reported by `delegate-status`, and must never be treated as a drop-in
+replacement for a read-only consultation. The generic benchmark
+`[command_agents]` mapping is deliberately machine-local: it supplies an argv
+command, appends the frozen task prompt, and runs only in a copied benchmark
+workspace.
+
+Do not assume such a harness exists or invoke an arbitrary local launcher.
+Use one only when the user explicitly identifies it or asks you to inspect
+their user-owned local benchmark configuration. In a benchmark context,
+validate the selected name without a model call first:
+
+```bash
+python -m benchmark.runner preflight --agents <local-agent> --tasks <task-id>
+```
+
+There is intentionally no general `delegate-agent` write interface today.
+Before any explicit write-capable run, the primary must establish the copied
+workspace, allowed scope, sandbox semantics, timeout, no-retry/no-fallback
+policy, and its own independent diff/test verification. The primary remains
+responsible for architecture, integration, and final correctness.
 
 ## Timeout and cancellation semantics
 

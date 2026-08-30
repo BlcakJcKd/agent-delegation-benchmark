@@ -10,7 +10,9 @@ environment by following the repository docs."
    ordered steps. Follow it; don't paraphrase it from memory.
 2. [PAYG_DELEGATES.md](PAYG_DELEGATES.md) — only if the human wants the
    optional DeepSeek/MiniMax routes (`NEW_MACHINE_SETUP.md` step 6).
-3. [DELEGATION_POLICY.md](DELEGATION_POLICY.md) and
+3. [VLLM_DELEGATES.md](VLLM_DELEGATES.md) — only if the human wants an
+   optional machine-local named OpenAI-compatible vLLM route.
+4. [DELEGATION_POLICY.md](DELEGATION_POLICY.md) and
    [DELEGATE_CONFIGURATION.md](DELEGATE_CONFIGURATION.md) — once the runtime
    is installed and you're about to actually delegate something.
 

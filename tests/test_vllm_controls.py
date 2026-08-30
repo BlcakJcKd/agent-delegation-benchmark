@@ -155,12 +155,30 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertIn("example.invalid", fixture)
         self.assertIn("vLLM", skill)
         self.assertIn("ask-vllm <named-route>", skill)
+        self.assertIn("route\nis positional", skill)
         self.assertIn("speculative fan-out", skill)
         self.assertIn("delegate-status --primary <primary>", skill)
         self.assertIn("max_tokens` above", skill)
         self.assertIn("delegate-status --primary <primary> --live", skill)
         self.assertIn("Live scheduler state is not GPU utilization", skill)
         self.assertIn("exit code 2", skill)
+        self.assertIn("Optional machine-local coding-agent harnesses", skill)
+        self.assertIn("There is intentionally no general `delegate-agent` write interface today.", skill)
+
+    def test_gitignore_covers_local_delegation_runtime_scratch_files(self):
+        ignored = (REPO_ROOT / ".gitignore").read_text()
+        for required in (
+            "runs/",
+            "delegate_runs/",
+            "/vllm_issues.jsonl",
+            "/vllm.toml",
+            "/benchmark.toml",
+            "*.local.toml",
+            "*.private.toml",
+            "private_launchers/",
+            "credentials/",
+        ):
+            self.assertIn(required, ignored)
 
 
 if __name__ == "__main__":
