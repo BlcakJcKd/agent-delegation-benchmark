@@ -17,7 +17,7 @@ from . import routing
 from .config import load_config
 from .paths import config_path, log_root
 from .status import compute_status
-from .vllm import inspect_vllm_routes, vllm_config_path
+from .vllm import inspect_vllm_live_routes, inspect_vllm_routes, vllm_config_path
 
 DIST_NAME = "agent-delegation-benchmark"
 
@@ -47,6 +47,10 @@ def _parser() -> argparse.ArgumentParser:
         help="declared primary provider identity, e.g. claude-code, codex, gemini, manual",
     )
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument(
+        "--live", action="store_true",
+        help="GET safe vLLM load/metrics snapshots (never performs inference)",
+    )
     return parser
 
 
@@ -55,6 +59,8 @@ def build_report(
     which=shutil.which,
     config: dict | None = None,
     vllm_routes: dict | None = None,
+    live: bool = False,
+    live_status: dict | None = None,
 ) -> dict[str, Any]:
     resolved_config = config if config is not None else load_config()
     resolved_vllm = dict(vllm_routes) if vllm_routes is not None else (
@@ -73,7 +79,7 @@ def build_report(
     routes = compute_status(
         resolved_config, primary=primary, which=which, vllm_routes=resolved_vllm
     )
-    return {
+    report = {
         "config_path": str(config_path()),
         "vllm_config_path": str(vllm_config_path()),
         "state_log_path": str(log_root()),
@@ -83,6 +89,10 @@ def build_report(
         "quota": "user-managed / unknown",
         "routes": [r.as_dict() for r in routes],
     }
+    if live:
+        observed = live_status if live_status is not None else inspect_vllm_live_routes(resolved_vllm)
+        report["live_vllm"] = {name: value.as_dict() for name, value in observed.items()}
+    return report
 
 
 def _print_human(report: dict[str, Any]) -> None:
@@ -102,7 +112,7 @@ def _print_human(report: dict[str, Any]) -> None:
     header = (
         f"{'Route':<15} {'Provider':<9} {'Transport':<10} {'Billing':<8} {'Maturity':<13} "
         f"{'Config':<10} {'Route type':<14} {'Effective':<25} {'Model':<24} "
-        f"{'Shared':<8} {'Conc.':<6} {'Think':<6} {'Cap':<6} Reason"
+        f"{'Shared':<8} {'Conc.':<6} {'Think':<6} {'Default':<8} {'Cap':<6} Reason"
     )
     print(header)
     print("-" * len(header))
@@ -117,14 +127,37 @@ def _print_human(report: dict[str, Any]) -> None:
             f"{('yes' if route.get('shared_compute') else 'no' if route.get('shared_compute') is not None else ''):<8} "
             f"{(route.get('max_concurrency') or '')!s:<6} "
             f"{('on' if route.get('thinking_default') else 'off' if route.get('thinking_default') is not None else ''):<6} "
-            f"{(route.get('max_tokens') or '')!s:<6} {reason}"
+            f"{(route.get('default_max_tokens') or '')!s:<8} "
+            f"{(route.get('max_tokens_cap') or '')!s:<6} {reason}"
         )
+    if "live_vllm" in report:
+        print()
+        print("Live vLLM observability (GET /load and /metrics only):")
+        for name, live in sorted(report["live_vllm"].items()):
+            values = [f"live: {live['state']}"]
+            for key, label in (
+                ("server_load", "load"), ("running", "running"), ("waiting", "waiting"),
+                ("kv_cache_usage_perc", "KV cache"), ("recent_requests", "recent requests"),
+                ("recent_prompt_tokens", "recent prompt tokens"),
+                ("recent_generation_tokens", "recent generation tokens"),
+                ("recent_preemptions", "recent preemptions"),
+            ):
+                if live.get(key) is not None:
+                    suffix = "%" if key == "kv_cache_usage_perc" else ""
+                    values.append(f"{label}: {live[key]}{suffix}")
+            if live.get("prefix_caching") is not None:
+                values.append(f"prefix caching: {'enabled' if live['prefix_caching'] else 'disabled'}")
+            if live.get("engine_sleep_state"):
+                values.append(f"sleep: {live['engine_sleep_state']}")
+            if live.get("reason"):
+                values.append(f"reason: {live['reason']}")
+            print(f"  {name}: " + ", ".join(values))
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        report = build_report(args.primary)
+        report = build_report(args.primary, live=args.live)
     except ValueError as exc:
         print(f"delegate-status error: {exc}")
         return 2

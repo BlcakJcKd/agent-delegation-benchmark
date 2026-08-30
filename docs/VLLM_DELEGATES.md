@@ -28,10 +28,12 @@ ask-vllm <named-route> --workspace /absolute/scoped-copy \
 
 The adapter makes one POST to `<base_url>/chat/completions`, sends only one
 user message, defaults `chat_template_kwargs.enable_thinking` to `false`, and
-enforces the configured completion cap. In the current schema, `max_tokens`
-is both the normal request default and the local caller-side ceiling; it is
-not a statement of the remote server or model maximum. `--thinking` is an explicit override;
-`--no-thinking` makes the default explicit. The default timeout is 300 seconds.
+enforces the configured local completion cap. New configurations use
+`default_max_tokens` for the normal request budget and `max_tokens_cap` for the
+caller-side ceiling; neither is a statement of the remote server or model
+maximum. Legacy `max_tokens = N` maps safely to both values `N`. `--thinking`
+is an explicit override; `--no-thinking` makes the default explicit. The
+default timeout is 300 seconds.
 
 The machine-local `flock` lock allows at most one shared vLLM request from the
 machine at a time. It is acquired non-blocking, so a second session fails
@@ -79,8 +81,12 @@ reports enabled routes as available when their local schema is valid, and
 separately reports disabled, invalid-configuration, or missing-credential-
 reference states. It includes the configured local output cap without
 contacting the server. It does not resolve credential values or perform a
-health check in ordinary mode. The full Codex/Qwen harness, if present, is a separate
-local coding-agent command and is not a delegation route.
+health check in ordinary mode. `delegate-status --live` is an explicit,
+GET-only observability mode: it samples `/load` and `/metrics` twice, never
+uses inference or credentials, and reports conservative `IDLE`, `ACTIVE`,
+`PRESSURED`, or `UNKNOWN` scheduler state. Live scheduler state is not GPU
+utilization. The full Codex/Qwen harness, if present, is a separate local
+coding-agent command and is not a delegation route.
 
 ## Codex harness compatibility
 

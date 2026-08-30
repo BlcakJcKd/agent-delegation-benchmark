@@ -65,7 +65,8 @@ class VLLMControlTests(unittest.TestCase):
         self.assertIn("shared compute: yes", text)
         self.assertIn("concurrency: 1", text)
         self.assertIn("thinking default: off", text)
-        self.assertIn("output default/local cap: 128 tokens", text)
+        self.assertIn("output default: 128 tokens", text)
+        self.assertIn("output cap: 128 tokens", text)
         self.assertNotIn("example.invalid", text)
 
     def test_enable_disable_route_persists_only_availability_and_preserves_vllm_definition(self):
@@ -97,7 +98,8 @@ class VLLMControlTests(unittest.TestCase):
         self.assertEqual(row.name, "lab-qwen")
         self.assertIn("model: Qwen/example-model", row.details)
         self.assertIn("concurrency: 1", row.details)
-        self.assertIn("output default/local cap: 128 tokens", row.details)
+        self.assertIn("output default: 128 tokens", row.details)
+        self.assertIn("output cap: 128 tokens", row.details)
         index = next(i for i, candidate in enumerate(rows) if candidate.name == "lab-qwen")
         updated = rows_to_config(config, toggle(rows, index))
         self.assertFalse(updated["vllm"]["lab-qwen"]["enabled"])
@@ -155,7 +157,9 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertIn("ask-vllm <named-route>", skill)
         self.assertIn("speculative fan-out", skill)
         self.assertIn("delegate-status --primary <primary>", skill)
-        self.assertIn("max_tokens` above the configured local", skill)
+        self.assertIn("max_tokens` above", skill)
+        self.assertIn("delegate-status --primary <primary> --live", skill)
+        self.assertIn("Live scheduler state is not GPU utilization", skill)
         self.assertIn("exit code 2", skill)
 
 

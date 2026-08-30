@@ -88,6 +88,35 @@ class VLLMConfigTests(VLLMTestBase):
         with self.assertRaisesRegex(ValueError, "could not be parsed"):
             vllm.load_vllm_config(self.config)
 
+    def test_legacy_max_tokens_maps_to_default_and_cap_without_widening(self):
+        provider = vllm.load_vllm_config(self.config)["example"]
+        self.assertEqual(provider.default_max_tokens, 64)
+        self.assertEqual(provider.max_tokens_cap, 64)
+        self.assertEqual(provider.max_tokens, 64)
+
+    def test_new_default_and_cap_are_loaded_and_default_request_is_used(self):
+        text = self.config.read_text().replace("max_tokens = 64", "default_max_tokens = 128\nmax_tokens_cap = 256")
+        self.config.write_text(text)
+        provider = vllm.load_vllm_config(self.config)["example"]
+        self.assertEqual(provider.default_max_tokens, 128)
+        self.assertEqual(provider.max_tokens_cap, 256)
+        transport = RecordingTransport()
+        outcome = self.run_call(transport)
+        self.assertEqual(outcome[0], 0)
+        self.assertEqual(json.loads(transport.calls[0][2])["max_tokens"], 128)
+
+    def test_default_cannot_exceed_cap(self):
+        self.config.write_text(
+            self.config.read_text().replace("max_tokens = 64", "default_max_tokens = 256\nmax_tokens_cap = 128")
+        )
+        with self.assertRaisesRegex(ValueError, "default_max_tokens must not exceed max_tokens_cap"):
+            vllm.load_vllm_config(self.config)
+
+    def test_legacy_and_new_budget_fields_cannot_be_mixed(self):
+        self.config.write_text(self.config.read_text().replace("max_tokens = 64", "max_tokens = 64\nmax_tokens_cap = 128"))
+        with self.assertRaisesRegex(ValueError, "either legacy max_tokens"):
+            vllm.load_vllm_config(self.config)
+
     def test_cli_over_budget_is_exit_two_without_http_or_issue_record(self):
         output = io.StringIO()
         with patch.object(vllm.urllib.request, "urlopen", side_effect=AssertionError("network call")), redirect_stdout(output):
@@ -161,7 +190,7 @@ class VLLMTransportTests(VLLMTestBase):
 
     def test_invalid_output_budget_is_local_validation_error(self):
         transport = RecordingTransport()
-        with self.assertRaisesRegex(vllm.VLLMConfigurationError, "local route default/cap=64"):
+        with self.assertRaisesRegex(vllm.VLLMConfigurationError, "local route default=64, cap=64"):
             self.run_call(transport, max_tokens=0)
         self.assertEqual(transport.calls, [])
 

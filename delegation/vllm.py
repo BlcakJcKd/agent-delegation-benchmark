@@ -43,9 +43,13 @@ VLLM_CONFIG_FILENAME = "vllm.toml"
 VLLM_ISSUE_FILENAME = "vllm_issues.jsonl"
 VLLM_LOCK_FILENAME = "vllm.request.lock"
 DEFAULT_MAX_TOKENS = 512
-HARD_MAX_TOKENS = 2048
+DEFAULT_MAX_TOKENS_CAP = 512
+HARD_MAX_TOKENS = 8192
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_OBSERVABILITY_BYTES = 4 * 1024 * 1024
 KEYRING_LOOKUP_TIMEOUT_SECONDS = 10
+OBSERVABILITY_TIMEOUT_SECONDS = 5
+LIVE_STATUS_INTERVAL_SECONDS = 2.0
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -76,7 +80,47 @@ class VLLMProvider:
     shared_compute: bool = True
     max_concurrency: int = 1
     thinking_default: bool = False
-    max_tokens: int = DEFAULT_MAX_TOKENS
+    default_max_tokens: int = DEFAULT_MAX_TOKENS
+    max_tokens_cap: int = DEFAULT_MAX_TOKENS_CAP
+
+    @property
+    def max_tokens(self) -> int:
+        """Backward-compatible name for the normal request default."""
+        return self.default_max_tokens
+
+
+@dataclass(frozen=True)
+class VLLMLiveStatus:
+    """A conservative, GET-only scheduler view for one local vLLM route."""
+
+    state: str
+    server_load: float | int | None = None
+    running: float | int | None = None
+    waiting: float | int | None = None
+    kv_cache_usage_perc: float | None = None
+    recent_requests: float | None = None
+    recent_prompt_tokens: float | None = None
+    recent_generation_tokens: float | None = None
+    recent_preemptions: float | None = None
+    prefix_caching: bool | None = None
+    engine_sleep_state: str | None = None
+    reason: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "server_load": self.server_load,
+            "running": self.running,
+            "waiting": self.waiting,
+            "kv_cache_usage_perc": self.kv_cache_usage_perc,
+            "recent_requests": self.recent_requests,
+            "recent_prompt_tokens": self.recent_prompt_tokens,
+            "recent_generation_tokens": self.recent_generation_tokens,
+            "recent_preemptions": self.recent_preemptions,
+            "prefix_caching": self.prefix_caching,
+            "engine_sleep_state": self.engine_sleep_state,
+            "reason": self.reason,
+        }
 
 
 @dataclass(frozen=True)
@@ -222,10 +266,15 @@ def _parse_provider(route: str, entry: Any) -> VLLMProvider:
     allowed = {
         "model", "base_url", "credential_source", "keyring_service", "keyring_provider",
         "shared_compute", "max_concurrency", "thinking_default", "max_tokens",
+        "default_max_tokens", "max_tokens_cap",
     }
     extra = set(entry) - allowed
     if extra:
         raise VLLMConfigurationError(f"vLLM provider {route!r} has unsupported field(s): {sorted(extra)}")
+    if "max_tokens" in entry and ({"default_max_tokens", "max_tokens_cap"} & set(entry)):
+        raise VLLMConfigurationError(
+            f"vLLM provider {route!r} must use either legacy max_tokens or default_max_tokens/max_tokens_cap"
+        )
     model = _require_string(entry, "model", route)
     if any(ord(char) < 32 for char in model):
         raise VLLMConfigurationError(f"vLLM provider {route!r} model contains control characters")
@@ -240,11 +289,27 @@ def _parse_provider(route: str, entry: Any) -> VLLMProvider:
     thinking_default = entry.get("thinking_default", False)
     if not isinstance(thinking_default, bool):
         raise VLLMConfigurationError(f"vLLM provider {route!r} thinking_default must be a boolean")
-    max_tokens = _validate_int(entry, "max_tokens", DEFAULT_MAX_TOKENS, route, maximum=HARD_MAX_TOKENS)
+    if "max_tokens" in entry:
+        # Legacy configuration is deliberately not widened: its old value is
+        # both the default and the local cap.
+        default_max_tokens = _validate_int(entry, "max_tokens", DEFAULT_MAX_TOKENS, route, maximum=HARD_MAX_TOKENS)
+        max_tokens_cap = default_max_tokens
+    else:
+        default_max_tokens = _validate_int(
+            entry, "default_max_tokens", DEFAULT_MAX_TOKENS, route, maximum=HARD_MAX_TOKENS
+        )
+        max_tokens_cap = _validate_int(
+            entry, "max_tokens_cap", DEFAULT_MAX_TOKENS_CAP, route, maximum=HARD_MAX_TOKENS
+        )
+        if default_max_tokens > max_tokens_cap:
+            raise VLLMConfigurationError(
+                f"vLLM provider {route!r} default_max_tokens must not exceed max_tokens_cap"
+            )
     return VLLMProvider(
         name=route, model=model, base_url=base_url, credential_source=credential_source,
         keyring_service=service, keyring_provider=provider, shared_compute=shared_compute,
-        max_concurrency=max_concurrency, thinking_default=thinking_default, max_tokens=max_tokens,
+        max_concurrency=max_concurrency, thinking_default=thinking_default,
+        default_max_tokens=default_max_tokens, max_tokens_cap=max_tokens_cap,
     )
 
 
@@ -287,6 +352,191 @@ def load_vllm_config(path: Path | None = None) -> dict[str, VLLMProvider]:
     if not target.is_file():
         return {}
     return {route: _parse_provider(route, entry) for route, entry in _load_vllm_raw(target).items()}
+
+
+def _observability_base_url(base_url: str) -> str:
+    parsed = urllib.parse.urlsplit(base_url.rstrip("/"))
+    path = parsed.path.rstrip("/")
+    if path.endswith("/v1"):
+        path = path[:-3].rstrip("/")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _observability_get(
+    base_url: str,
+    path: str,
+    *,
+    opener: Callable[..., Any],
+) -> tuple[int | None, bytes, str | None]:
+    """GET one safe observability endpoint without credentials."""
+    request = urllib.request.Request(
+        _observability_base_url(base_url) + path,
+        headers={"Accept": "application/json, text/plain; version=0.0.4"},
+        method="GET",
+    )
+    try:
+        with opener(request, timeout=OBSERVABILITY_TIMEOUT_SECONDS) as response:
+            body = response.read(MAX_OBSERVABILITY_BYTES + 1)
+            if len(body) > MAX_OBSERVABILITY_BYTES:
+                return int(response.status), b"", "response-too-large"
+            return int(response.status), body, None
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        return int(exc.code), b"", "http-failure"
+    except (OSError, TimeoutError, socket.timeout, urllib.error.URLError):
+        return None, b"", "unreachable"
+
+
+def _metric_labels(value: str) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for key, raw in re.findall(r'([A-Za-z_][A-Za-z0-9_]*)="((?:\\.|[^"\\])*)"', value):
+        labels[key] = raw.replace(r'\"', '"').replace(r'\\', '\\').replace(r'\n', "\n")
+    return labels
+
+
+def _parse_prometheus_metrics(body: bytes) -> dict[str, list[tuple[dict[str, str], float]]]:
+    """Parse enough Prometheus text format for stable scheduler metrics."""
+    result: dict[str, list[tuple[dict[str, str], float]]] = {}
+    for line in body.decode("utf-8", "replace").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^([^\s{]+)(?:\{(.*)\})?\s+([-+0-9.eEInfNaN]+)(?:\s+\d+)?$", line)
+        if not match:
+            continue
+        try:
+            value = float(match.group(3))
+        except ValueError:
+            continue
+        result.setdefault(match.group(1), []).append((_metric_labels(match.group(2) or ""), value))
+    return result
+
+
+def _metric_total(
+    metrics: dict[str, list[tuple[dict[str, str], float]]],
+    name: str,
+    model: str,
+) -> float | None:
+    values = metrics.get(name)
+    if not values:
+        return None
+    model_values = [(labels, value) for labels, value in values if labels.get("model_name") in (None, model)]
+    if not model_values:
+        return None
+    return sum(value for _labels, value in model_values)
+
+
+def _metric_label_value(
+    metrics: dict[str, list[tuple[dict[str, str], float]]],
+    name: str,
+    label: str,
+    model: str,
+) -> str | None:
+    for labels, value in metrics.get(name, []):
+        if labels.get("model_name") not in (None, model) or value <= 0:
+            continue
+        return labels.get(label)
+    return None
+
+
+def _live_snapshot(provider: VLLMProvider, *, opener: Callable[..., Any]) -> tuple[dict[str, Any] | None, str | None]:
+    load_status, load_body, load_error = _observability_get(provider.base_url, "/load", opener=opener)
+    metrics_status, metrics_body, metrics_error = _observability_get(provider.base_url, "/metrics", opener=opener)
+    if load_status in {401, 403} or metrics_status in {401, 403}:
+        return None, "observability requires authentication"
+    if load_status != 200 or metrics_status != 200:
+        return None, "observability endpoint unavailable"
+    try:
+        load = json.loads(load_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, "load response is incompatible"
+    if not isinstance(load, dict):
+        return None, "load response is incompatible"
+    metrics = _parse_prometheus_metrics(metrics_body)
+    running = _metric_total(metrics, "vllm:num_requests_running", provider.model)
+    waiting = _metric_total(metrics, "vllm:num_requests_waiting", provider.model)
+    kv = _metric_total(metrics, "vllm:kv_cache_usage_perc", provider.model)
+    if kv is not None:
+        kv = float(kv)
+    return {
+        "server_load": load.get("server_load") if isinstance(load.get("server_load"), (int, float)) else None,
+        "running": running,
+        "waiting": waiting,
+        "kv_cache_usage_perc": kv,
+        "prompt_tokens": _metric_total(metrics, "vllm:prompt_tokens_total", provider.model),
+        "generation_tokens": _metric_total(metrics, "vllm:generation_tokens_total", provider.model),
+        "requests": _metric_total(metrics, "vllm:request_success_total", provider.model),
+        "preemptions": _metric_total(metrics, "vllm:num_preemptions_total", provider.model),
+        "prefix_caching": _metric_label_value(metrics, "vllm:cache_config_info", "enable_prefix_caching", provider.model),
+        "engine_sleep_state": _metric_label_value(metrics, "vllm:engine_sleep_state", "sleep_state", provider.model),
+    }, load_error or metrics_error
+
+
+def _counter_delta(first: dict[str, Any], second: dict[str, Any], key: str) -> float | None:
+    before, after = first.get(key), second.get(key)
+    if not isinstance(before, (int, float)) or not isinstance(after, (int, float)):
+        return None
+    return max(0.0, float(after) - float(before))
+
+
+def _classify_live(first: dict[str, Any], second: dict[str, Any]) -> VLLMLiveStatus:
+    running, waiting = second.get("running"), second.get("waiting")
+    if not isinstance(running, (int, float)) or not isinstance(waiting, (int, float)):
+        return VLLMLiveStatus("UNKNOWN", reason="required scheduler metrics unavailable")
+    recent_requests = _counter_delta(first, second, "requests")
+    recent_prompt = _counter_delta(first, second, "prompt_tokens")
+    recent_generation = _counter_delta(first, second, "generation_tokens")
+    recent_preemptions = _counter_delta(first, second, "preemptions")
+    counters_available = any(value is not None for value in (recent_requests, recent_prompt, recent_generation))
+    kv = second.get("kv_cache_usage_perc")
+    if waiting > 0 or (recent_preemptions or 0) > 0 or (isinstance(kv, (int, float)) and kv >= 95.0):
+        state = "PRESSURED"
+    elif running > 0 or any((value or 0) > 0 for value in (recent_requests, recent_prompt, recent_generation)):
+        state = "ACTIVE"
+    elif not counters_available:
+        state = "UNKNOWN"
+    else:
+        state = "IDLE"
+    return VLLMLiveStatus(
+        state,
+        server_load=second.get("server_load"),
+        running=running,
+        waiting=waiting,
+        kv_cache_usage_perc=kv,
+        recent_requests=recent_requests,
+        recent_prompt_tokens=recent_prompt,
+        recent_generation_tokens=recent_generation,
+        recent_preemptions=recent_preemptions,
+        prefix_caching=(second.get("prefix_caching") or "").lower() == "true" if second.get("prefix_caching") is not None else None,
+        engine_sleep_state=second.get("engine_sleep_state"),
+    )
+
+
+def inspect_vllm_live_routes(
+    routes: dict[str, VLLMRouteInfo],
+    *,
+    opener: Callable[..., Any] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    interval_seconds: float = LIVE_STATUS_INTERVAL_SECONDS,
+) -> dict[str, VLLMLiveStatus]:
+    """Collect two unauthenticated GET snapshots for valid local routes."""
+    get = opener or urllib.request.urlopen
+    result: dict[str, VLLMLiveStatus] = {}
+    for name in sorted(routes):
+        info = routes[name]
+        if info.provider is None:
+            result[name] = VLLMLiveStatus("UNKNOWN", reason=info.error or "invalid local route")
+            continue
+        first, first_error = _live_snapshot(info.provider, opener=get)
+        if first is None:
+            result[name] = VLLMLiveStatus("UNKNOWN", reason=first_error or "observability unavailable")
+            continue
+        sleep(interval_seconds)
+        second, second_error = _live_snapshot(info.provider, opener=get)
+        if second is None:
+            result[name] = VLLMLiveStatus("UNKNOWN", reason=second_error or "observability unavailable")
+            continue
+        result[name] = _classify_live(first, second)
+    return result
 
 
 def _resolve_credential(provider: VLLMProvider) -> str:
@@ -511,16 +761,16 @@ def run_vllm_consultation(
     provider = providers[route]
     if not provider.shared_compute or provider.max_concurrency != 1:
         raise VLLMConfigurationError("shared vLLM providers must enable shared_compute with max_concurrency = 1")
-    requested_tokens = provider.max_tokens if max_tokens is None else max_tokens
+    requested_tokens = provider.default_max_tokens if max_tokens is None else max_tokens
     if isinstance(requested_tokens, bool) or not isinstance(requested_tokens, int) or requested_tokens <= 0:
         raise VLLMConfigurationError(
             f"requested max_tokens={requested_tokens!r} is invalid; "
-            f"local route default/cap={provider.max_tokens}; "
+            f"local route default={provider.default_max_tokens}, cap={provider.max_tokens_cap}; "
             "request rejected before model inference"
         )
-    if requested_tokens > provider.max_tokens:
+    if requested_tokens > provider.max_tokens_cap:
         raise VLLMConfigurationError(
-            f"requested max_tokens={requested_tokens} exceeds local route cap={provider.max_tokens}; "
+            f"requested max_tokens={requested_tokens} exceeds local route cap={provider.max_tokens_cap}; "
             "request rejected before model inference"
         )
     effective_thinking = provider.thinking_default if thinking is None else thinking
@@ -599,6 +849,8 @@ def run_vllm_consultation(
         "operation_class": "bounded-chat-completion",
         "thinking": effective_thinking,
         "max_tokens": requested_tokens,
+        "default_max_tokens": provider.default_max_tokens,
+        "max_tokens_cap": provider.max_tokens_cap,
         "timeout_seconds": timeout_seconds,
         "started_at": started_at,
         "ended_at": datetime.now(timezone.utc).isoformat(),

@@ -273,14 +273,20 @@ An unavailable server is an infrastructure-availability failure, not evidence
 that the model produced a poor response; keep those diagnoses separate.
 
 Before invoking a named shared OpenAI-compatible route, inspect its effective
-local capabilities with `delegate-status --primary <primary>`. Respect the
-reported output budget: never request `max_tokens` above the configured local
-route cap, and choose a task and output format that fit. If the task does not
-fit, do not invoke that route. A local validation exit such as exit code 2
-means no inference occurred and is not model-quality evidence. Distinguish a
-local route policy from a remote server/model maximum. A suitable alternate
-provider may be selected before invocation when policy and availability allow,
-but do not silently switch providers after validation failure.
+local capabilities with `delegate-status --primary <primary>`. For substantial
+shared-route work, `delegate-status --primary <primary> --live` may be used
+when the explicit GET-only observability check is worth its small overhead;
+do not make it mandatory for tiny requests. Treat `IDLE` as ordinary capacity,
+`ACTIVE` as a reason to keep work short, `PRESSURED` as a reason to defer
+substantial work, and `UNKNOWN` as a reason to use conservative shared-compute
+policy. Respect the reported output budget: never request `max_tokens` above
+the configured local route cap, and choose a task and output format that fit.
+If the task does not fit, do not invoke that route. A local validation exit
+such as exit code 2 means no inference occurred and is not model-quality
+evidence. Distinguish a local route policy from a remote server/model maximum.
+Live scheduler state is not GPU utilization. A suitable alternate provider may
+be selected before invocation when policy and availability allow, but do not
+silently switch providers after validation failure.
 
 The named route configuration and redacted JSONL reliability records are
 machine-local; never commit them or put credentials in prompts, config,
