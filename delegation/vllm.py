@@ -31,10 +31,11 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from .core import (
-    DEFAULT_TIMEOUT_SECONDS, _check_recursion_guard, _record_path, _validate_scope,
-    default_log_root,
+    DEFAULT_TIMEOUT_SECONDS, _check_recursion_guard, _record_path, _validated_log_root,
+    _validate_scope, default_log_root,
 )
 from .paths import config_dir, state_dir
+from .retention import persist_response, persist_text
 
 VLLM_CONFIG_FILENAME = "vllm.toml"
 # Kept for compatibility with the existing user-owned path.  New successful
@@ -140,15 +141,16 @@ class VLLMRouteInfo:
 
 @dataclass(frozen=True)
 class VLLMRunResult:
-    """A result whose response text is intentionally retained only in memory."""
+    """A result whose text has already been retained in private run state."""
 
     exit_code: int
     record_dir: Path
     text: str
     diagnostics: str
+    response_recorded: bool = False
 
     # Preserve the familiar ``code, record_dir = run(...)`` shape for callers
-    # of the new adapter without putting the private response in an audit file.
+    # of the adapter while exposing whether the durable response invariant held.
     def __iter__(self) -> Iterator[object]:
         yield self.exit_code
         yield self.record_dir
@@ -732,7 +734,7 @@ def _append_issue(record: dict[str, Any], path: Path | None = None) -> Path:
 
 
 def _record_execution(record_dir: Path, data: dict[str, Any]) -> None:
-    (record_dir / "execution.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    persist_text(record_dir, "execution.json", json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 def run_vllm_consultation(
@@ -774,11 +776,13 @@ def run_vllm_consultation(
             "request rejected before model inference"
         )
     effective_thinking = provider.thinking_default if thinking is None else thinking
-    resolved_log_root = (log_root or default_log_root()).expanduser().resolve()
-    if resolved_log_root == workspace or resolved_log_root.is_relative_to(workspace):
-        raise VLLMConfigurationError("log root must be outside the consulted workspace")
+    try:
+        resolved_log_root = _validated_log_root(log_root or default_log_root(), workspace)
+    except ValueError as exc:
+        raise VLLMConfigurationError(str(exc)) from exc
     record_dir = _record_path(resolved_log_root, f"vllm-{route}")
-    record_dir.mkdir(parents=True, exist_ok=False)
+    record_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
+    os.chmod(record_dir, 0o700)
     started_at = datetime.now(timezone.utc).isoformat()
     begun = time.monotonic()
     exit_code = 1
@@ -788,6 +792,14 @@ def run_vllm_consultation(
     result_state = "infrastructure-failure"
     response = ""
     stderr = ""
+    provider_success = False
+    inference_occurred = False
+    response_metadata: dict[str, Any] = {
+        "response_recorded": False,
+        "response_file": None,
+        "response_length_bytes": 0,
+        "response_sha256": None,
+    }
     try:
         with _termination_guard():
             with _request_lock(lock_path):
@@ -815,8 +827,33 @@ def run_vllm_consultation(
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise VLLMFailure("malformed-response", "vLLM response was not valid JSON") from exc
                 response = _response_text(parsed)
-                exit_code = 0
-                result_state = "text-returned"
+                provider_success = True
+                inference_occurred = True
+                try:
+                    response_metadata = persist_response(record_dir, response)
+                    if response_metadata.get("response_recorded") is not True:
+                        raise OSError("response persistence did not confirm a recorded response")
+                except OSError:
+                    # The provider completed, but returning a response that
+                    # exists only in memory would make a successful HTTP call
+                    # unrecoverable if the caller loses terminal output.
+                    response = ""
+                    exit_code = 1
+                    result_state = "response-retention-failure"
+                    error_category = "response-retention"
+                    response_metadata = {
+                        "response_recorded": False,
+                        "response_file": None,
+                        "response_length_bytes": 0,
+                        "response_sha256": None,
+                    }
+                    stderr = (
+                        "vLLM response-retention failure: textual response was not "
+                        "durably saved; no retry performed\n"
+                    )
+                else:
+                    exit_code = 0
+                    result_state = "text-returned"
     except VLLMFailure as exc:
         error_category = exc.category
         timed_out = exc.timed_out
@@ -840,7 +877,7 @@ def run_vllm_consultation(
         exit_code = 130
         stderr = "vLLM incomplete-infrastructure-run: manual-termination\n"
     elapsed = time.monotonic() - begun
-    (record_dir / "stderr.txt").write_text(stderr)
+    persist_text(record_dir, "stderr.txt", stderr)
     execution = {
         "adapter": "openai-compatible-vllm",
         "route": route,
@@ -858,6 +895,8 @@ def run_vllm_consultation(
         "http_status": http_status,
         "timed_out": timed_out,
         "exit_code": exit_code,
+        "provider_success": provider_success,
+        "inference_occurred": inference_occurred,
         "response_status": result_state,
         "error_category": error_category,
         "retry": False,
@@ -865,12 +904,12 @@ def run_vllm_consultation(
         "shared_compute": True,
         "max_concurrency": 1,
         "prompt_recorded": False,
-        "response_recorded": False,
         "credential_recorded": False,
         "stderr_file": "stderr.txt",
+        **response_metadata,
     }
     _record_execution(record_dir, execution)
-    if result_state != "text-returned":
+    if result_state != "text-returned" and error_category != "response-retention":
         _append_issue({
             "adapter": "openai-compatible-vllm",
             "route": route,
@@ -887,4 +926,7 @@ def run_vllm_consultation(
             "retry": False,
             "fallback": None,
         }, issue_path)
-    return VLLMRunResult(exit_code, record_dir, response, stderr)
+    return VLLMRunResult(
+        exit_code, record_dir, response, stderr,
+        bool(response_metadata.get("response_recorded")),
+    )

@@ -31,8 +31,11 @@ the returned response was not inspected.
 inspect exit status, stderr, `execution.json`, route status, and scope evidence;
 classify infrastructure versus model/response failure; repair once only when a
 safe, local, bounded infrastructure fix is available; and never infer model
-failure from a missing review file alone. Do not expose secrets while
-diagnosing.
+failure from a missing review file alone. For a completed run, require
+`response_status: "text-returned"` together with `response_recorded: true`.
+If terminal output was lost, recover the run-relative `response_file` from the
+private evidence directory before considering another call. Do not expose
+secrets while diagnosing.
 
 ## Operator completion invariant
 
@@ -40,6 +43,9 @@ Every requested external route must finish as one of these states:
 
 - **Success:** textual response returned and inspected; useful findings were
   integrated or explicitly rejected after verification.
+- **Response-retention infrastructure failure:** the provider returned text,
+  but the wrapper could not durably save it; this is not a provider/model
+  failure and must not be retried automatically.
 - **Valid no-addition:** the delegate explicitly returned meaningful text saying
   it had nothing material to add.
 - **Diagnosed infrastructure failure:** the exact category and reason are
@@ -63,7 +69,7 @@ Inspect, without printing secrets:
 
 Use these categories: availability/config; scope/sandbox; recursion/provider
 guard; launcher/executable; authentication; provider/API/transport;
-wrapper/runtime; and model/response. A non-zero exit remains undiagnosed
+response-retention; wrapper/runtime; and model/response. A non-zero exit remains undiagnosed
 until the evidence supports a category. If a concrete repair is safe, local,
 bounded, and in scope, retry at most once. There are no blind retry loops and
 no silent provider substitutions. If repair is unsafe or unavailable, report
@@ -81,6 +87,7 @@ a delegation, pipx, Git, or installation failure — see
 | Recursive delegation | `run_consultation` raises `ValueError("recursive delegation rejected: ...")`, including for a malformed `AGENT_DELEGATION_DEPTH` | Policy / infrastructure rejection | `_check_recursion_guard` runs first, before delegate-name or scope validation; no subprocess launched | None — this is a hard stop, not a transient condition | No | Investigate why a delegated context tried to call an approved wrapper again; do not unset the marker to force through |
 | Missing delegate executable | `run_consultation` raises `RuntimeError("delegate executable is unavailable: <name>")` | Infrastructure / environment failure | `shutil.which` checked after scope validation, before argv/log construction; no subprocess; no substitution of a different `DELEGATES` entry | None | No | Install/authenticate the missing CLI, or fix `PATH`; do not silently fall back to another model |
 | Timeout | `subprocess.TimeoutExpired` caught; exit code recorded as `124`, `timed_out: true` in `execution.json` | Infrastructure failure (unless the task was genuinely too large for a reasonable timeout, which is an operator sizing decision, not a model score) | Python's `subprocess.run(..., timeout=...)` kills the child on timeout; `execution.json` and `stdout.txt`/`stderr.txt` (partial output, if any) are still written; workspace is never touched by this path | None automatic — `run_consultation` makes exactly one attempt; a human/primary may choose to re-invoke with a larger `--timeout` | No | Re-invoke manually with an adjusted timeout if the task genuinely needs more time; do not auto-retry in a loop |
+| Response-retention failure | Provider/child returns non-empty text but the wrapper cannot atomically save it | Local response-capture infrastructure failure, not provider/model quality | Wrapper records `response_status: "response-retention-failure"`, `error_category: "response-retention"`, `provider_success: true` and `inference_occurred: true` where known, returns non-zero, and does not emit unretained text as success | None automatic | No | Inspect the private run metadata and repair local storage; never retry solely because terminal output was lost |
 | Non-zero delegate exit | `run_consultation` returns whatever `returncode` the delegate CLI produced; `cli.py` propagates it as the process exit code | Ambiguous by default — could be a CLI usage/auth/crash error (infrastructure) or the delegate's own reported failure. `core.py` does not classify this further | Exit code, stdout, and stderr are all logged verbatim in `execution.json`/`stdout.txt`/`stderr.txt`; the wrapper returns captured stdout and puts metadata on stderr for diagnosis | At most one retry after a concrete, safe local repair | Only after the primary reads stdout/stderr and rules out an infrastructure cause (auth, flag rejection, crash) | Read the raw log before drawing any conclusion; do not treat a non-zero exit as a de facto model score |
 | Empty successful response | Delegate exits 0 but stdout is blank or whitespace | Model / response failure, not valid “nothing to add” | `execution.json` records `response_status: "empty-response"`; the `ask-*` CLI returns 3 and explains that the consultation response is unusable | At most one retry only after a concrete response/transport repair; no blind retry | No | Inspect provider output and runtime evidence; do not call it valid no-addition unless the delegate explicitly returned meaningful text |
 | Malformed/unparseable provider output | Delegate exits 0 but `stdout.txt` is not the expected JSON/text shape | Model / response or wrapper compatibility failure; distinguish using provider/launcher evidence | The text is preserved opaquely; the primary must classify whether the provider completed and whether the response can be consumed | At most one retry after a concrete, safe repair | No — an unparseable response is not a reasoning-quality result | Treat the response as inconclusive per [CLAUDE_CODE_ORCHESTRATION.md](CLAUDE_CODE_ORCHESTRATION.md)'s verification rule: never act on a claim that can't even be read cleanly |

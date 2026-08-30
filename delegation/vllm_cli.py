@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .core import DEFAULT_TIMEOUT_SECONDS
+from .retention import ResponseRetentionError, read_response
 from .vllm import VLLMConfigurationError, VLLMRunResult, run_vllm_consultation
 
 
@@ -42,11 +43,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     code, record_dir = outcome
     if isinstance(outcome, VLLMRunResult):
-        result, diagnostics = outcome.text, outcome.diagnostics
+        # The runner clears ``text`` on retention failure; also enforce the
+        # flag here so a future implementation cannot emit an unretained
+        # successful response through the normal CLI path.
+        result = outcome.text if outcome.response_recorded else ""
+        diagnostics = outcome.diagnostics
     else:
         # Compatibility for callers/tests that replace the runner with the
         # established two-value evidence shape.
-        result = (record_dir / "stdout.txt").read_text()
+        try:
+            result = read_response(record_dir)
+        except ResponseRetentionError as exc:
+            print(f"delegation response error: {exc}", file=sys.stderr)
+            return 4
         diagnostics = (record_dir / "stderr.txt").read_text()
     if result:
         sys.stdout.write(result)

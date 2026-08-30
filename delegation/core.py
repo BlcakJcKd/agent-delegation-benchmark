@@ -20,6 +20,7 @@ from typing import Callable
 
 from . import routing
 from .paths import log_root as _xdg_log_root
+from .retention import persist_response, persist_text
 
 READ_ONLY_CLAUDE_TOOLS: tuple[str, ...] = ("Read", "Glob", "Grep")
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -226,6 +227,25 @@ def _record_path(log_root: Path, delegate: str) -> Path:
     return log_root / f"{timestamp}-{delegate}-{uuid.uuid4().hex[:10]}"
 
 
+def _capture_text(value: object) -> str:
+    """Normalize subprocess captures without putting raw values in metadata."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value if isinstance(value, str) else str(value)
+
+
+def _validated_log_root(log_root: Path, workspace: Path) -> Path:
+    """Resolve a private run root outside both the scope and Git trees."""
+    resolved = log_root.expanduser().resolve()
+    if resolved == workspace or resolved.is_relative_to(workspace):
+        raise ValueError("log root must be outside the consulted workspace")
+    if any((ancestor / ".git").exists() for ancestor in (resolved, *resolved.parents)):
+        raise ValueError("log root must be outside a repository")
+    return resolved
+
+
 def run_consultation(
     delegate_name: str,
     workspace: Path,
@@ -263,13 +283,15 @@ def run_consultation(
     if not executable:
         raise RuntimeError(f"delegate executable is unavailable: {spec.executable}")
     argv = build_argv(spec, workspace, task)
-    resolved_log_root = (log_root or default_log_root()).expanduser().resolve()
-    if resolved_log_root == workspace or resolved_log_root.is_relative_to(workspace):
-        raise ValueError("log root must be outside the consulted workspace")
+    resolved_log_root = _validated_log_root(log_root or default_log_root(), workspace)
     record_dir = _record_path(resolved_log_root, delegate_name)
-    record_dir.mkdir(parents=True, exist_ok=False)
+    record_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
+    # The run directory is private response state, including when the caller's
+    # umask is permissive.  ``persist_text`` repeats this check before each
+    # capture so a replaced/symlinked directory fails closed.
+    os.chmod(record_dir, 0o700)
     prompt = argv[-1]
-    (record_dir / "prompt.md").write_text(prompt)
+    persist_text(record_dir, "prompt.md", prompt)
     started_at = datetime.now(timezone.utc).isoformat()
     begun = time.monotonic()
     stdout = ""
@@ -283,16 +305,60 @@ def run_consultation(
             env=child_env,
         )
         exit_code = completed.returncode
-        stdout = completed.stdout
-        stderr = completed.stderr
+        stdout = _capture_text(completed.stdout)
+        stderr = _capture_text(completed.stderr)
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
         timed_out = True
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
+        stdout = _capture_text(exc.stdout)
+        stderr = _capture_text(exc.stderr)
     wall_seconds = time.monotonic() - begun
-    (record_dir / "stdout.txt").write_text(stdout)
-    (record_dir / "stderr.txt").write_text(stderr)
+
+    provider_success = exit_code == 0
+    inference_occurred = provider_success and bool(stdout.strip())
+    response_status = "text-returned" if stdout.strip() else "empty-response"
+    error_category: str | None = None
+    response_metadata: dict[str, object] = {
+        "response_recorded": False,
+        "response_file": None,
+        "response_length_bytes": 0,
+        "response_sha256": None,
+    }
+    try:
+        response_metadata = persist_response(record_dir, stdout)
+        if stdout.strip() and response_metadata.get("response_recorded") is not True:
+            raise OSError("response persistence did not confirm a recorded response")
+    except OSError:
+        # The child has already completed successfully, but returning its text
+        # without a durable copy would recreate the incident this contract is
+        # designed to prevent.  Keep the provider/inference facts separate and
+        # make the wrapper failure deterministic; do not issue a retry.
+        if stdout.strip():
+            response_status = "response-retention-failure"
+            error_category = "response-retention"
+            response_metadata = {
+                "response_recorded": False,
+                "response_file": None,
+                "response_length_bytes": 0,
+                "response_sha256": None,
+            }
+            if provider_success:
+                exit_code = 1
+            stderr = (
+                f"{stderr.rstrip(chr(10))}{chr(10) if stderr else ''}"
+                "delegation response-retention failure: textual response was not "
+                "durably saved; no retry performed\n"
+            )
+        else:
+            # There is no textual result to retain.  Preserve the established
+            # empty-response semantics even if writing the empty capture fails.
+            response_metadata = {
+                "response_recorded": False,
+                "response_file": None,
+                "response_length_bytes": 0,
+                "response_sha256": None,
+            }
+    persist_text(record_dir, "stderr.txt", stderr)
     record = {
         "delegate": spec.name,
         "mode": spec.mode,
@@ -311,7 +377,11 @@ def run_consultation(
         "timeout_seconds": timeout_seconds,
         "timed_out": timed_out,
         "exit_code": exit_code,
-        "response_status": "text-returned" if stdout.strip() else "empty-response",
+        "provider_success": provider_success,
+        "inference_occurred": inference_occurred,
+        "response_status": response_status,
+        "error_category": error_category,
+        **response_metadata,
         "argv": argv[:-1] + ["<PROMPT>"],
         "prompt_file": "prompt.md",
         "stdout_file": "stdout.txt",
@@ -329,5 +399,5 @@ def run_consultation(
         "recursive_delegation_enabled": False,
         "child_delegation_depth": 1,
     }
-    (record_dir / "execution.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    persist_text(record_dir, "execution.json", json.dumps(record, indent=2, sort_keys=True) + "\n")
     return exit_code, record_dir

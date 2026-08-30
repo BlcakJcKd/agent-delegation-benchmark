@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from .core import DELEGATES, DEFAULT_TIMEOUT_SECONDS, run_consultation
+from .retention import ResponseRetentionError, read_response
 from .vllm_cli import main as vllm_main
 
 
@@ -63,12 +64,15 @@ def main(argv: list[str] | None = None, *, fixed_delegate: str | None = None) ->
         return 2
 
     # stdout is the consultation result channel.  The delegate's raw result
-    # is already persisted as stdout.txt; replay it unchanged so callers do
-    # not need to discover or parse an audit directory just to consume a
-    # successful response.  Keep operational metadata and diagnostics on
-    # stderr so existing human-readable evidence remains available without
-    # contaminating the result stream.
-    result = (record_dir / "stdout.txt").read_text()
+    # is durably persisted before a successful run is finalized; replay it
+    # unchanged so callers do not need to discover or parse an audit directory
+    # just to consume a successful response.  Keep operational metadata and
+    # diagnostics on stderr so they do not contaminate the result stream.
+    try:
+        result = read_response(record_dir)
+    except ResponseRetentionError as exc:
+        print(f"delegation response error: {exc}", file=sys.stderr)
+        return 4
     diagnostics = (record_dir / "stderr.txt").read_text()
     if result:
         sys.stdout.write(result)

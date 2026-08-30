@@ -115,6 +115,13 @@ class CanonicalGuidanceTests(unittest.TestCase):
             "Codex/OpenAI primary",
             "Claude Code/Anthropic primary",
             "Optional machine-local coding-agent harnesses",
+            "response_recorded=true",
+            "response_file",
+            "response-retention",
+            "HTTP 200",
+            "terminal/tool execution yield",
+            "poll or wait on that same handle",
+            "already-retained response",
         ):
             self.assertIn(required, skill)
 

@@ -23,12 +23,20 @@ context/latency cost.
 
 The `ask-*` invocation itself is the consultation channel. On a successful
 call, the wrapper exits 0 and returns the delegate's textual response on
-stdout. The same response is retained as `stdout.txt` in the audit run
-directory; `stderr` carries launcher/provider diagnostics and the evidence
-summary, while `execution.json` records exit and response metadata. The
-primary must capture and read stdout before claiming the consultation is
-complete. A delegate does not need to create a review file, and the absence of
-one is not a failure signal.
+stdout. The wrapper durably retains the same response as private `stdout.txt`
+in the audit run directory before finalizing success; `stderr` carries
+launcher/provider diagnostics and the evidence summary, while `execution.json`
+records exit and response metadata including `response_recorded: true` and the
+run-relative response locator. The primary must capture and read stdout before
+claiming the consultation is complete, and can recover that retained response
+from the evidence directory if terminal output is lost. A delegate does not
+need to create a review file, and the absence of one is not a failure signal.
+
+The normal success invariant is `exit_code=0`, `response_status=text-returned`,
+non-empty response text, and `response_recorded=true`. HTTP success alone is
+not enough. If text exists but cannot be durably retained, the wrapper reports
+a distinct `response-retention` infrastructure failure, preserves the fact
+that the provider completed where known, and does not retry automatically.
 
 The only valid empty-looking outcome is a meaningful textual response that
 explicitly says there is nothing material to add. Blank stdout after a zero

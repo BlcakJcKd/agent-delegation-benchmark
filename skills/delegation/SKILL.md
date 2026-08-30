@@ -80,9 +80,15 @@ Use this sequence for every external consultation:
    result channel. Do not wait for or search for a review file unless the task
    specifically asked the delegate to create one; delegates are not required
    to create files.
-6. Extract useful findings, verify them against primary evidence, and
+6. Confirm that a successful wrapper recorded the response before integrating
+   it. The normal invariant is `exit_code=0`, `response_status=text-returned`,
+   non-empty response text, and `response_recorded=true` in `execution.json`.
+   The wrapper retains the response privately in the run directory before it
+   finalizes success; `response_file` is a stable run-relative locator and
+   does not expose the response in metadata.
+7. Extract useful findings, verify them against primary evidence, and
    integrate only verified conclusions.
-7. If multiple delegates were used, record material agreement, disagreement,
+8. If multiple delegates were used, record material agreement, disagreement,
    and unique useful findings. Do not invent disagreement when none was
    returned.
 
@@ -222,9 +228,17 @@ Treat every claim as a hypothesis, not a fact. Read the returned stdout first,
 then read the cited file:line evidence yourself, re-run any verification
 command it proposes if safe, and only act once you've independently confirmed
 it. Logs land under the installed state directory (`delegate-status` shows the
-path) as `prompt.md`/`stdout.txt`/`stderr.txt`/`execution.json` — plain files,
-read them like any other. The files are an audit backup, not a required
-delegate deliverable.
+path) as `prompt.md`/`stdout.txt`/`stderr.txt`/`execution.json` — plain private
+files, read them like any other. `stdout.txt` is the wrapper-retained
+response, not a delegate-created deliverable. If terminal output was lost,
+read `execution.json`, verify `response_recorded=true`, then read the
+run-relative `response_file` from that same evidence directory. Recover an
+already-retained response before considering another model call.
+
+HTTP 200 or a zero process exit alone is not evidence of a usable retained
+result. A `text-returned` record with `response_recorded=false` is a
+`response-retention` infrastructure failure; do not classify it as provider or
+model quality and do not retry solely because terminal stdout was lost.
 
 ## Failure diagnosis and bounded recovery
 
@@ -232,10 +246,10 @@ If an `ask-*` command fails, inspect its exit status, stderr, evidence path,
 `execution.json`, route status, and scope declaration before classifying it.
 Classify the cause as one of: availability/config, scope/sandbox,
 recursion/provider guard, launcher/executable, authentication,
-provider/API/transport, wrapper/runtime, or model/response. A non-zero exit is
-not a model-quality score, and a missing review file is not evidence of any
-failure. Never report a delegate as “non-functional” without the underlying
-diagnosis.
+provider/API/transport, response-retention, wrapper/runtime, or
+model/response. A non-zero exit is not a model-quality score, and a missing
+review file is not evidence of any failure. Never report a delegate as
+“non-functional” without the underlying diagnosis.
 
 If the cause is safe, local, bounded infrastructure within the task scope,
 repair that cause and retry at most once. Never use a blind retry loop or
@@ -354,6 +368,15 @@ an externally terminated/incomplete infrastructure run, not as a wrapper
 timeout or model failure. Do not terminate a healthy wrapper solely because
 its audit files are still absent; either wait for the configured bound or set
 the bound explicitly before invoking it.
+
+A terminal/tool execution yield or UI wait is a property of the caller's
+supervisor, not the delegate timeout. For example, a 30-second terminal wait
+returning no visible stdout does not mean a wrapper with a 300-second timeout
+finished or failed. If the execution tool returns a live process/session
+handle, poll or wait on that same handle until completion; never launch a
+replacement delegate. If completion metadata later says the provider
+succeeded but stdout is absent, inspect the retained-response metadata and
+recover the existing response instead of rerunning inference.
 
 ## Recursion is prohibited
 

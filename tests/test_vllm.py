@@ -167,9 +167,12 @@ class VLLMTransportTests(VLLMTestBase):
         self.assertEqual(request["max_tokens"], 64)
         self.assertEqual(timeout, 300)
         self.assertFalse(self.issues.exists(), "successful runs belong in delegate_runs, not the issue log")
-        evidence = (record_dir / "execution.json").read_text()
+        evidence = json.loads((record_dir / "execution.json").read_text())
         self.assertNotIn("fixture", evidence)
-        self.assertFalse((record_dir / "stdout.txt").exists())
+        self.assertTrue(evidence["response_recorded"])
+        self.assertEqual(evidence["response_file"], "stdout.txt")
+        self.assertEqual((record_dir / "stdout.txt").read_text(), "answer")
+        self.assertEqual((record_dir / "stdout.txt").stat().st_mode & 0o777, 0o600)
 
     def test_thinking_override_is_explicit(self):
         transport = RecordingTransport()
@@ -267,6 +270,23 @@ class VLLMTransportTests(VLLMTestBase):
         self.assertEqual(execution["response_status"], "model/response-failure")
         self.assertNotIn("private model detail", (record_dir / "stderr.txt").read_text())
 
+    def test_response_persistence_failure_is_distinct_and_not_issue_logged(self):
+        transport = RecordingTransport()
+        with patch("delegation.vllm.persist_response", side_effect=OSError("disk full")):
+            outcome = self.run_call(transport)
+        code, record_dir = outcome
+        self.assertNotEqual(code, 0)
+        self.assertEqual(outcome.text, "")
+        self.assertFalse(outcome.response_recorded)
+        execution = json.loads((record_dir / "execution.json").read_text())
+        self.assertEqual(execution["response_status"], "response-retention-failure")
+        self.assertEqual(execution["error_category"], "response-retention")
+        self.assertTrue(execution["provider_success"])
+        self.assertTrue(execution["inference_occurred"])
+        self.assertFalse(execution["response_recorded"])
+        self.assertIn("response-retention failure", (record_dir / "stderr.txt").read_text())
+        self.assertFalse(self.issues.exists())
+
     def test_manual_termination_is_an_incomplete_infrastructure_run(self):
         def interrupted(*args):
             raise KeyboardInterrupt
@@ -341,6 +361,21 @@ class VLLMCLITests(unittest.TestCase):
             self.assertEqual(out.getvalue(), "text result")
             self.assertIn("diagnostic", err.getvalue())
             self.assertNotIn("text result", err.getvalue())
+
+    def test_cli_never_emits_text_marked_unretained(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+
+        with TemporaryDirectory() as temp:
+            record_dir = Path(temp)
+            out, err = StringIO(), StringIO()
+            outcome = vllm.VLLMRunResult(0, record_dir, "unretained", "", False)
+            with patch("delegation.vllm_cli.run_vllm_consultation", return_value=outcome):
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = vllm_main(["example", "--workspace", temp, "--prompt", "task"])
+            self.assertEqual(code, 3)
+            self.assertEqual(out.getvalue(), "")
+            self.assertIn("no textual consultation", err.getvalue())
 
 
 if __name__ == "__main__":

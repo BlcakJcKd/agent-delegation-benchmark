@@ -46,9 +46,14 @@ The normal delegation contract is preserved: textual response on stdout,
 diagnostics and evidence summary on stderr, exit 124 plus `timed_out: true`
 for a genuine timeout, and explicit failure categories for authentication,
 API compatibility, rate limiting, server, connection, malformed-response,
-empty-response, refusal, and concurrency failures.
-The response text is held in memory long enough to replay it on stdout and is
-not written to the evidence directory.
+empty-response, refusal, concurrency, and response-retention failures.
+The response is atomically retained as private `stdout.txt` before the success
+metadata is finalized, and is held in memory only long enough to replay it on
+stdout. `execution.json` records `response_recorded: true`, the response file,
+its byte length, and an integrity digest without copying response contents into
+metadata. If retention fails after the provider returns text, the wrapper
+reports a distinct `response-retention` failure and does not append a provider
+reliability issue or retry.
 
 If a caller requests more than the configured local cap, validation fails
 before credential lookup, the HTTP call, retry, or issue-log append. The error

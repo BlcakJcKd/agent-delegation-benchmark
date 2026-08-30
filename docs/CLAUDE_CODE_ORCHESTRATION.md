@@ -113,18 +113,20 @@ guards" below.
 
 The command's stdout is the delegate's textual consultation and is the first
 thing the primary must capture and read. Do not wait for a generated review
-file: the delegate is not required to create one. The audit directory is a
-backup and diagnosis record, not the normal response channel.
+file: the delegate is not required to create one. The wrapper durably retains
+the response privately before finalizing success; the audit directory is both
+the recovery copy and diagnosis record.
 
 Each call writes a timestamped directory under `delegate_runs/` (or
 `--log-root`), outside the consulted workspace:
 
 - `prompt.md` — exact prompt sent
-- `stdout.txt` / `stderr.txt` — raw delegate output (the response is replayed
-  on wrapper stdout; wrapper metadata and diagnostics are on stderr)
+- `stdout.txt` / `stderr.txt` — private raw delegate output (`stdout.txt` is
+  the retained response replayed on wrapper stdout; wrapper metadata and
+  diagnostics are on stderr)
 - `execution.json` — delegate, caller, requested model/effort, workspace,
-  timing, exit code, response status, redacted argv, and whether the call timed
-  out
+  timing, exit code, response status, redacted argv, timeout state, and the
+  response-retention invariant/locator
 
 Read these with the `Read` tool like any other file; nothing about them
 requires special handling.
