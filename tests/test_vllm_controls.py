@@ -65,6 +65,7 @@ class VLLMControlTests(unittest.TestCase):
         self.assertIn("shared compute: yes", text)
         self.assertIn("concurrency: 1", text)
         self.assertIn("thinking default: off", text)
+        self.assertIn("output default/local cap: 128 tokens", text)
         self.assertNotIn("example.invalid", text)
 
     def test_enable_disable_route_persists_only_availability_and_preserves_vllm_definition(self):
@@ -96,6 +97,7 @@ class VLLMControlTests(unittest.TestCase):
         self.assertEqual(row.name, "lab-qwen")
         self.assertIn("model: Qwen/example-model", row.details)
         self.assertIn("concurrency: 1", row.details)
+        self.assertIn("output default/local cap: 128 tokens", row.details)
         index = next(i for i, candidate in enumerate(rows) if candidate.name == "lab-qwen")
         updated = rows_to_config(config, toggle(rows, index))
         self.assertFalse(updated["vllm"]["lab-qwen"]["enabled"])
@@ -111,6 +113,8 @@ class VLLMControlTests(unittest.TestCase):
             self.assertEqual(result["lab-qwen"].provider, "vllm")
             self.assertEqual(result["lab-qwen"].model, "Qwen/example-model")
             self.assertTrue(result["lab-qwen"].shared_compute)
+            self.assertEqual(result["lab-qwen"].max_tokens, 128)
+            self.assertEqual(result["lab-qwen"].as_dict()["max_tokens_cap"], 128)
         disabled = set_enabled(config, "vllm", "lab-qwen", False, reason="user disabled")
         item = next(item for item in compute_status(disabled, "codex", which=lambda _: "/bin/example", vllm_routes=route_info) if item.route == "lab-qwen")
         self.assertEqual(item.effective, "disabled")
@@ -150,6 +154,9 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertIn("vLLM", skill)
         self.assertIn("ask-vllm <named-route>", skill)
         self.assertIn("speculative fan-out", skill)
+        self.assertIn("delegate-status --primary <primary>", skill)
+        self.assertIn("max_tokens` above the configured local", skill)
+        self.assertIn("exit code 2", skill)
 
 
 if __name__ == "__main__":

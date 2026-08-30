@@ -81,6 +81,7 @@ def build_rows(
                 f"shared compute: {'yes' if provider.shared_compute else 'no'}",
                 f"concurrency: {provider.max_concurrency}",
                 f"thinking default: {'on' if provider.thinking_default else 'off'}",
+                f"output default/local cap: {provider.max_tokens} tokens",
                 "credential: configured reference",
             )
         elif info:

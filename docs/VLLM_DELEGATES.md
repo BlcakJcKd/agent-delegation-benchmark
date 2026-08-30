@@ -28,7 +28,9 @@ ask-vllm <named-route> --workspace /absolute/scoped-copy \
 
 The adapter makes one POST to `<base_url>/chat/completions`, sends only one
 user message, defaults `chat_template_kwargs.enable_thinking` to `false`, and
-enforces the configured completion cap. `--thinking` is an explicit override;
+enforces the configured completion cap. In the current schema, `max_tokens`
+is both the normal request default and the local caller-side ceiling; it is
+not a statement of the remote server or model maximum. `--thinking` is an explicit override;
 `--no-thinking` makes the default explicit. The default timeout is 300 seconds.
 
 The machine-local `flock` lock allows at most one shared vLLM request from the
@@ -45,6 +47,11 @@ API compatibility, rate limiting, server, connection, malformed-response,
 empty-response, refusal, and concurrency failures.
 The response text is held in memory long enough to replay it on stdout and is
 not written to the evidence directory.
+
+If a caller requests more than the configured local cap, validation fails
+before credential lookup, the HTTP call, retry, or issue-log append. The error
+names the requested value and says `local route cap`; it must not be read as a
+remote server capability report.
 
 ## Local reliability records
 
@@ -70,8 +77,9 @@ the configured model and shared-compute policy offline; it never queries
 `/models` or the completion endpoint merely to render settings. `delegate-status`
 reports enabled routes as available when their local schema is valid, and
 separately reports disabled, invalid-configuration, or missing-credential-
-reference states. It does not resolve credential values or perform a health
-check in ordinary mode. The full Codex/Qwen harness, if present, is a separate
+reference states. It includes the configured local output cap without
+contacting the server. It does not resolve credential values or perform a
+health check in ordinary mode. The full Codex/Qwen harness, if present, is a separate
 local coding-agent command and is not a delegation route.
 
 ## Codex harness compatibility

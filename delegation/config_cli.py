@@ -91,6 +91,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
                 print(f"      shared compute: {'yes' if provider.shared_compute else 'no'}")
                 print(f"      concurrency: {provider.max_concurrency}")
                 print(f"      thinking default: {'on' if provider.thinking_default else 'off'}")
+                print(f"      output default/local cap: {provider.max_tokens} tokens")
                 print("      credential: configured reference")
             elif info:
                 print(f"      state: {info.error_kind or 'invalid configuration'}")

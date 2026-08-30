@@ -102,7 +102,7 @@ def _print_human(report: dict[str, Any]) -> None:
     header = (
         f"{'Route':<15} {'Provider':<9} {'Transport':<10} {'Billing':<8} {'Maturity':<13} "
         f"{'Config':<10} {'Route type':<14} {'Effective':<25} {'Model':<24} "
-        f"{'Shared':<8} {'Conc.':<6} {'Think':<6} Reason"
+        f"{'Shared':<8} {'Conc.':<6} {'Think':<6} {'Cap':<6} Reason"
     )
     print(header)
     print("-" * len(header))
@@ -116,7 +116,8 @@ def _print_human(report: dict[str, Any]) -> None:
             f"{(route.get('model') or ''):<24} "
             f"{('yes' if route.get('shared_compute') else 'no' if route.get('shared_compute') is not None else ''):<8} "
             f"{(route.get('max_concurrency') or '')!s:<6} "
-            f"{('on' if route.get('thinking_default') else 'off' if route.get('thinking_default') is not None else ''):<6} {reason}"
+            f"{('on' if route.get('thinking_default') else 'off' if route.get('thinking_default') is not None else ''):<6} "
+            f"{(route.get('max_tokens') or '')!s:<6} {reason}"
         )
 
 

@@ -512,8 +512,17 @@ def run_vllm_consultation(
     if not provider.shared_compute or provider.max_concurrency != 1:
         raise VLLMConfigurationError("shared vLLM providers must enable shared_compute with max_concurrency = 1")
     requested_tokens = provider.max_tokens if max_tokens is None else max_tokens
-    if isinstance(requested_tokens, bool) or requested_tokens <= 0 or requested_tokens > provider.max_tokens or requested_tokens > HARD_MAX_TOKENS:
-        raise VLLMConfigurationError("max_tokens must be positive and no greater than the configured bounded cap")
+    if isinstance(requested_tokens, bool) or not isinstance(requested_tokens, int) or requested_tokens <= 0:
+        raise VLLMConfigurationError(
+            f"requested max_tokens={requested_tokens!r} is invalid; "
+            f"local route default/cap={provider.max_tokens}; "
+            "request rejected before model inference"
+        )
+    if requested_tokens > provider.max_tokens:
+        raise VLLMConfigurationError(
+            f"requested max_tokens={requested_tokens} exceeds local route cap={provider.max_tokens}; "
+            "request rejected before model inference"
+        )
     effective_thinking = provider.thinking_default if thinking is None else thinking
     resolved_log_root = (log_root or default_log_root()).expanduser().resolve()
     if resolved_log_root == workspace or resolved_log_root.is_relative_to(workspace):

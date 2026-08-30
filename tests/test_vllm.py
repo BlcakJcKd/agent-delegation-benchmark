@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import io
 import socket
 import urllib.error
+from contextlib import redirect_stdout
 from unittest.mock import MagicMock
 import unittest
 from pathlib import Path
@@ -86,6 +88,20 @@ class VLLMConfigTests(VLLMTestBase):
         with self.assertRaisesRegex(ValueError, "could not be parsed"):
             vllm.load_vllm_config(self.config)
 
+    def test_cli_over_budget_is_exit_two_without_http_or_issue_record(self):
+        output = io.StringIO()
+        with patch.object(vllm.urllib.request, "urlopen", side_effect=AssertionError("network call")), redirect_stdout(output):
+            code = vllm_main([
+                "example", "--workspace", str(self.workspace), "--prompt", "task",
+                "--max-tokens", "65", "--config", str(self.config),
+                "--log-root", str(self.logs),
+            ])
+        self.assertEqual(code, 2)
+        self.assertIn("requested max_tokens=65 exceeds local route cap=64", output.getvalue())
+        self.assertIn("request rejected before model inference", output.getvalue())
+        self.assertFalse(self.logs.exists())
+        self.assertFalse(self.issues.exists())
+
 
 class VLLMTransportTests(VLLMTestBase):
     def test_http_transport_maps_connection_timeout_without_exposing_details(self):
@@ -131,6 +147,23 @@ class VLLMTransportTests(VLLMTestBase):
         self.assertEqual(self.run_call(transport, thinking=True)[0], 0)
         request = json.loads(transport.calls[0][2])
         self.assertTrue(request["chat_template_kwargs"]["enable_thinking"])
+
+    def test_request_above_local_cap_is_rejected_before_http_or_issue_log(self):
+        transport = RecordingTransport()
+        with self.assertRaisesRegex(
+            vllm.VLLMConfigurationError,
+            r"requested max_tokens=65 exceeds local route cap=64; request rejected before model inference",
+        ):
+            self.run_call(transport, max_tokens=65)
+        self.assertEqual(transport.calls, [])
+        self.assertFalse(self.logs.exists())
+        self.assertFalse(self.issues.exists())
+
+    def test_invalid_output_budget_is_local_validation_error(self):
+        transport = RecordingTransport()
+        with self.assertRaisesRegex(vllm.VLLMConfigurationError, "local route default/cap=64"):
+            self.run_call(transport, max_tokens=0)
+        self.assertEqual(transport.calls, [])
 
     def test_authorization_is_never_in_issue_or_stderr(self):
         transport = RecordingTransport(status=401, body=b"private server detail")

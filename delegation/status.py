@@ -37,6 +37,7 @@ class RouteStatus:
     shared_compute: bool | None = None
     max_concurrency: int | None = None
     thinking_default: bool | None = None
+    max_tokens: int | None = None
     credential_configured: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -58,6 +59,10 @@ class RouteStatus:
             "shared_compute": self.shared_compute,
             "max_concurrency": self.max_concurrency,
             "thinking_default": self.thinking_default,
+            "max_tokens": self.max_tokens,
+            # In the current schema this is both the normal request default
+            # and the user-owned local ceiling, not a remote server limit.
+            "max_tokens_cap": self.max_tokens,
             "credential_configured": self.credential_configured,
         }
 
@@ -122,7 +127,7 @@ def compute_status(
         if info.provider is None:
             effective = "missing credential reference" if info.error_kind == "missing-credential-reference" else "invalid configuration"
             effective_reason = info.error
-            model = shared_compute = max_concurrency = thinking_default = credential_configured = None
+            model = shared_compute = max_concurrency = thinking_default = max_tokens = credential_configured = None
         else:
             provider = info.provider
             effective = "available" if configured_enabled else "disabled"
@@ -131,6 +136,7 @@ def compute_status(
             shared_compute = provider.shared_compute
             max_concurrency = provider.max_concurrency
             thinking_default = provider.thinking_default
+            max_tokens = provider.max_tokens
             credential_configured = True
         results.append(RouteStatus(
             route=route, provider="vllm", transport="openai-compatible",
@@ -139,6 +145,7 @@ def compute_status(
             effective_reason=effective_reason, executable=None, executable_available=None,
             source="vllm", model=model, shared_compute=shared_compute,
             max_concurrency=max_concurrency, thinking_default=thinking_default,
+            max_tokens=max_tokens,
             credential_configured=credential_configured,
         ))
     return results

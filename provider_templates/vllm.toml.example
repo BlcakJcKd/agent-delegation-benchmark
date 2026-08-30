@@ -13,7 +13,9 @@ keyring_service = "ai-coding-provider"
 keyring_provider = "example-vllm"
 
 # Shared-service safety policy: one request at a time, bounded output, and
-# non-thinking mode unless the caller explicitly requests --thinking.
+# non-thinking mode unless the caller explicitly requests --thinking. In the
+# current schema max_tokens is both the normal request default and this local
+# caller-side ceiling; it is not a claim about the remote server maximum.
 shared_compute = true
 max_concurrency = 1
 thinking_default = false
