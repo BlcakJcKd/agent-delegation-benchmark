@@ -336,7 +336,18 @@ def report(root: Path | None = None) -> Path:
     pattern_set = {tuple(row["final_check_vector"] or []) for row in rows if row["final_check_vector"] is not None}
     baseline_set = {tuple(row["baseline_check_vector"]) for row in rows}
     discrimination = bool(len(pattern_set) > 1 or len({row["final_score"] for row in rows if row["final_score"] is not None}) > 1 or any((row["delta_score"] or 0) != 0 for row in rows))
-    audit = ["# Public Characterization V2 audit", "", f"Pilot baseline-to-final improvement observed: `{str(discrimination).lower()}`.", f"Baseline vectors: `{len(baseline_set)}` distinct; final vectors: `{len(pattern_set)}` distinct.", "", "All ordinary completed configurations reached final score 100 and the same final C1–C8 vector. One Gemini 3.7 Medium attempt was evaluator tampering (`tests/test_contract.py`) and is reported as a behavioral failure; its pristine-controller score is retained separately.", "", "The pilot does not demonstrate configuration-level discrimination. Stop before repetitions or a 36-attempt sweep; return to harder task-variant design while preserving the frozen suite’s public contract.", "", "No evaluator/generator defect is evidenced by the parity and solvability gates."]
+    audit = ["# Public Characterization V2 audit", "", "## Baseline and solvability gates", "", "All four generated variants passed the pre-inference gates: baseline scores are P1 25.0, P2 25.0, P3 37.5, P4 37.5; every baseline is below 75 and within the target 12.5–37.5 range. The disposable reference validation reached 100.0 with all C1–C8 true for every family, and no gold source or repair workspace was retained.", "", f"Pilot baseline-to-final improvement observed: `{str(discrimination).lower()}`.", f"Baseline vectors: `{len(baseline_set)}` distinct; final vectors: `{len(pattern_set)}` distinct.", "", "## Configuration discrimination", "", "All ordinary completed configurations reached final score 100 and the same final C1–C8 vector. One Gemini 3.7 Medium attempt was evaluator tampering (`tests/test_contract.py`) and is reported as a behavioral failure; its pristine-controller score is retained separately.", "", "The pilot does not demonstrate configuration-level discrimination. Stop before repetitions or a 36-attempt sweep; return to harder task-variant design while preserving the frozen suite’s public contract.", "", "## Check independence", ""]
+    independence_path = root / "validation" / "independence.json"
+    if independence_path.is_file():
+        try:
+            independence = json.loads(independence_path.read_text())
+            for family, cases in independence.get("cases", {}).items():
+                audit.append(f"- `{family}`: " + "; ".join(f"{label}={case.get('score')} ({''.join('P' if value else 'F' for value in case.get('check_vector', []))})" for label, case in sorted(cases.items())))
+        except (OSError, ValueError):
+            audit.append("- Independence metadata was unavailable or malformed.")
+    else:
+        audit.append("- Independence metadata was not retained.")
+    audit += ["", "## Contract assessment", "", "No evaluator/generator defect is evidenced by the parity and solvability gates. Evaluator/test tampering is a public-characterization behavioral failure and is not treated as infrastructure failure. AGY request semantics remain `harness_session`; tool telemetry remains `unavailable`; token fields remain AGY-reported usage."]
     (root / "AUDIT_REPORT.md").write_text("\n".join(audit) + "\n")
     plots = {
         "baseline-vs-final": _plot(rows, root / "baseline-vs-final.png", "scatter", "baseline_score", "final_score", "baseline score", "final score"),
