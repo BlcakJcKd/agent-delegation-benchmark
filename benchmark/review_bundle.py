@@ -88,7 +88,7 @@ def _git_identity() -> str | None:
 
 
 def _attempt_counts(state: Path) -> dict[str, int]:
-    evidence = sorted((state / "evidence").glob("*.json"))
+    evidence = sorted({path for directory in ("evidence", "calibration-evidence") for path in (state / directory).glob("*.json")})
     attempts = completed = timeouts = 0
     for path in evidence:
         try:
@@ -100,6 +100,14 @@ def _attempt_counts(state: Path) -> dict[str, int]:
             timeouts += 1
         elif item.get("status") == "completed":
             completed += 1
+    stop_record = state / "validation" / "calibration-stop.json"
+    if stop_record.is_file():
+        try:
+            item = json.loads(stop_record.read_text())
+        except (OSError, ValueError):
+            item = {}
+        if item.get("status") == "harness_failure":
+            attempts += 1
     return {"attempts": attempts, "completed": completed, "failed": attempts - completed - timeouts, "timeouts": timeouts}
 
 
