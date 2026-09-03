@@ -66,4 +66,6 @@ class PublicCharacterizationV22Tests(unittest.TestCase):
             (state / "workspaces" / "secret.txt").write_text("not included")
             result = create_review_bundle("public-characterization-v2.2", state_dir=state, output=Path(temporary) / "bundle")
             self.assertIn("calibration-evidence/P1.json", result["manifest"]["included_files"])
+            self.assertEqual(result["manifest"]["attempts"], 1)
+            self.assertEqual(result["manifest"]["completed"], 0)
             self.assertFalse(any("workspaces" in name for name in result["manifest"]["included_files"]))

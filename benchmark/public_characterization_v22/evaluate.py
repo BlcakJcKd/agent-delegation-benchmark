@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 CHECK_COUNT = 8
+MODULE_PREFIXES = ["domain", "storage", "parsing", "cache", "catalog", "analytics", "service", "dataio", "transform", "ordering", "split", "metrics", "report", "pipeline"]
 
 def _safe(name, fn):
     try:
@@ -87,6 +88,8 @@ def evaluate(instance: Any, root: Path) -> dict[str, Any]:
         checks = _p1(root) if instance.family=="P1_stateful_inventory" else _p3(root)
     except Exception as exc:
         checks = [{"name":"setup", "passed":False, "detail":type(exc).__name__}] + [{"name":f"unavailable-{i}", "passed":False, "detail":"setup_failed"} for i in range(2, CHECK_COUNT+1)]
+    finally:
+        _clean_modules(MODULE_PREFIXES)
     if len(checks) != CHECK_COUNT:
         raise ValueError("malformed evaluator vector")
     vector=[bool(x["passed"]) for x in checks]
