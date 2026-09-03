@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ekalavya.catalogue import add_candidate, promote, selectable
-from ekalavya.config import migrate_legacy_config
+from ekalavya.config import ensure_control_files, migrate_legacy_config
 from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_cost, record_price_snapshot, upsert_model
 from ekalavya.resolver import resolve
 from ekalavya.schema import CandidateIdentity, RunIntent
@@ -74,6 +74,12 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
             conn = connect(Path(d) / "ledger.sqlite3"); import_legacy_state(conn, root)
             row = conn.execute("SELECT profile,provider,requested_json FROM runs").fetchone()
             self.assertEqual(row[0], "flash"); self.assertEqual(row[1], "gemini"); self.assertNotIn("must-not-be-copied", row[2])
+
+    def test_control_file_migration_is_additive_and_explicit(self):
+        with tempfile.TemporaryDirectory() as d:
+            report = ensure_control_files(Path(d)); self.assertEqual(set(report["created"]), {"catalogue.json", "profiles.json"})
+            self.assertGreater(len(json.loads((Path(d) / "catalogue.json").read_text())), 1)
+            self.assertEqual(ensure_control_files(Path(d))["created"], [])
 
 
 if __name__ == "__main__":

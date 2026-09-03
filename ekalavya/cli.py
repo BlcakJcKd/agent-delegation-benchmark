@@ -15,6 +15,7 @@ from typing import Any
 from . import __version__
 from .catalogue import load_catalogue, save_catalogue
 from .config import config_root, migrate_legacy_config
+from .executor import execute
 from .ledger import connect, default_db_path, record_resolution, record_run
 from .migrate import migrate_all
 from .resolver import resolve
@@ -102,6 +103,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     resolution = resolve(intent, profiles[args.profile], load_catalogue(cat)); record = resolution.as_dict(); run_id = uuid.uuid4().hex
     conn = connect(); record_run(conn, run_id, intent.__dict__, resolved=record.get("resolved"), status=resolution.state, resolution_reason=resolution.reason, provider=(resolution.candidate.provider if resolution.candidate else None), identity_key=(resolution.candidate.identity_key if resolution.candidate else None)); record_resolution(conn, run_id, intent.__dict__, record)
     if args.prompt_file and resolution.state != "resolved": _json_or_text({"run_id": run_id, **record}, args.json); return 3
+    if args.prompt_file:
+        if not args.workspace:
+            _json_or_text({"run_id": run_id, **record, "execution": {"state": "workspace-required", "reason": "a writable/read-only workspace must be explicit"}}, args.json); return 3
+        execution = execute(record, args.prompt_file, args.workspace, primary=args.primary)
+        _json_or_text({"run_id": run_id, **record, "execution": execution}, args.json); return 0 if execution.get("state") == "completed" else 4
     _json_or_text({"run_id": run_id, **record}, args.json); return 0 if resolution.state == "resolved" else 3
 
 

@@ -5,12 +5,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .config import migrate_legacy_config
+from .config import ensure_control_files, migrate_legacy_config
 from .ledger import connect, default_state_dir, import_execution_runs, import_legacy_state
 
 
 def migrate_all(*, legacy_config: Path | None = None, new_config: Path | None = None, legacy_state: Path | None = None, db: Path | None = None) -> dict[str, object]:
     config_report = migrate_legacy_config(legacy_config, new_config)
+    config_report["control_files"] = ensure_control_files(new_config)
     state_base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")).expanduser()
     old_state = legacy_state or (state_base / "agent-delegation")
     conn = connect(db)
