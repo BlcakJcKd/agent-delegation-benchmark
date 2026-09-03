@@ -27,6 +27,7 @@ OPTIONAL_PLOTS = (
     "final-vs-wall.png", "final-vs-tokens.png",
 )
 OPTIONAL_DIRS = ("provenance", "validation", "task-specifications", "verifier-contracts", "edit-scopes")
+PUBLIC_SNAPSHOT_DIR = "baseline-task-snapshots"
 REQUESTED_SEMANTICS = {
     "request_metric_semantics", "tool_event_telemetry", "token_metric_semantics",
 }
@@ -155,6 +156,10 @@ def create_review_bundle(
         source = state / directory
         if source.is_dir():
             candidates.extend(p for p in sorted(source.rglob("*")) if p.is_file() and "__pycache__" not in p.parts)
+    if _evaluation_class(state, experiment) == "public_characterization":
+        source = state / PUBLIC_SNAPSHOT_DIR
+        if source.is_dir():
+            candidates.extend(p for p in sorted(source.rglob("*")) if p.is_file() and "__pycache__" not in p.parts)
     evidence = state / "evidence"
     if evidence.is_dir():
         candidates.extend(p for p in sorted(evidence.glob("*.json")) if p.is_file())
@@ -200,7 +205,7 @@ def create_review_bundle(
         "credentials_included": False,
         "configuration_included": False,
         "ledger_included": False,
-        "allowlist": {"root_artifacts": list(ROOT_ARTIFACTS), "optional_plots": list(OPTIONAL_PLOTS), "optional_directories": list(OPTIONAL_DIRS), "evidence_glob": "evidence/*.json"},
+        "allowlist": {"root_artifacts": list(ROOT_ARTIFACTS), "optional_plots": list(OPTIONAL_PLOTS), "optional_directories": list(OPTIONAL_DIRS), "public_snapshot_directory": PUBLIC_SNAPSHOT_DIR, "evidence_glob": "evidence/*.json"},
     }
     if correction is not None:
         manifest["provenance_correction"] = {key: correction.get(key) for key in ("originally_recorded_suite_sha", "corrected_suite_sha", "correction_reason", "correction_timestamp", "ledger_correction_id")}
