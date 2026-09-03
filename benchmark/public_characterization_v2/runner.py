@@ -347,7 +347,7 @@ def report(root: Path | None = None) -> Path:
             audit.append("- Independence metadata was unavailable or malformed.")
     else:
         audit.append("- Independence metadata was not retained.")
-    audit += ["", "## Contract assessment", "", "No evaluator/generator defect is evidenced by the parity and solvability gates. Evaluator/test tampering is a public-characterization behavioral failure and is not treated as infrastructure failure. AGY request semantics remain `harness_session`; tool telemetry remains `unavailable`; token fields remain AGY-reported usage."]
+    audit += ["", "## Contract assessment", "", "Visible/controller parity and solvability passed, but the pilot exposed a task-contract weakness requiring inspection: P4 C6 (`codec round trip`) passes the broken baseline because it exercises only the default timeout, so a codec that drops non-default timeout data can still pass. This is recorded as a version-fix defect; historical scores and task semantics are not retroactively changed. Evaluator/test tampering is a public-characterization behavioral failure and is not treated as infrastructure failure. AGY request semantics remain `harness_session`; tool telemetry remains `unavailable`; token fields remain AGY-reported usage."]
     (root / "AUDIT_REPORT.md").write_text("\n".join(audit) + "\n")
     plots = {
         "baseline-vs-final": _plot(rows, root / "baseline-vs-final.png", "scatter", "baseline_score", "final_score", "baseline score", "final score"),
