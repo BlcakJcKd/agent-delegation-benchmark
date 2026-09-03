@@ -200,12 +200,15 @@ def _safe(name,fn):
 def checks(root):
  from settings.loader import load_settings
  from settings.state import Session
- cfg=Path(tempfile.mkstemp(suffix='.json')[1]); cfg.write_text(json.dumps({'mode':'file','limit':4,'enabled':False,'ratio':.5}))
- try:
-  def c1(): return load_settings()=={'mode':'safe','limit':10,'enabled':False,'ratio':1.0}
-  def c2(): x=load_settings(cfg,{'APP_LIMIT':'7','APP_ENABLED':'false'},['--limit=0','--mode=cli']); return x['mode']=='cli' and x['limit']==0 and x['enabled'] is False
-  def c3(): x=load_settings(cfg,{'APP_LIMIT':'0','APP_ENABLED':'false'},[]); return x['limit']==0 and x['enabled'] is False and isinstance(x['limit'],int)
- finally: cfg.unlink(missing_ok=True)
+ def with_config(environ,argv):
+  cfg=Path(tempfile.mkstemp(suffix='.json')[1]); cfg.write_text(json.dumps({'mode':'file','limit':4,'enabled':False,'ratio':.5}))
+  try:return load_settings(cfg,environ,argv)
+  finally:cfg.unlink(missing_ok=True)
+ def c1(): return load_settings()=={'mode':'safe','limit':10,'enabled':False,'ratio':1.0}
+ def c2():
+  x=with_config({'APP_LIMIT':'7','APP_ENABLED':'false'},['--limit=0','--mode=cli']); return x['mode']=='cli' and x['limit']==0 and x['enabled'] is False
+ def c3():
+  x=with_config({'APP_LIMIT':'0','APP_ENABLED':'false'},[]); return x['limit']==0 and x['enabled'] is False and isinstance(x['limit'],int)
  def c4(): s=Session(); a=s.load('ada'); b=s.load('lin'); return a['user']=='ada' and b['user']=='lin' and a is not b
  def c5(): s=Session(); a=s.load('ada'); s.load('lin'); s.invalidate('ada'); return s.load('ada') is not a and s.load('lin')['user']=='lin'
  def c6(): s=Session(); s.load('ada'); s.load('lin'); return s.current['user']=='lin'
