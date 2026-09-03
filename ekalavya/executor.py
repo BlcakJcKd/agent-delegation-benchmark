@@ -1,4 +1,4 @@
-"""Narrow execution bridge for explicitly configured legacy delegate routes."""
+"""Narrow execution bridge for explicitly configured Ekalavya routes."""
 
 from __future__ import annotations
 
@@ -11,15 +11,23 @@ def execute(resolution: dict, prompt_file: Path, workspace: Path, *, primary: st
     """Execute only a route named in the resolved catalogue entry.
 
     Ekalavya V1 does not invent a provider adapter. A catalogue entry may carry
-    ``legacy_route`` (for example ``flash``); that route is passed to the
+    execution route (for example a configured adapter name); that route is passed to the
     existing safety-hardened wrapper, which enforces scope, depth, stdin,
     timeout, process cleanup, and response retention. Missing route metadata
     is a deterministic harness-unavailable result.
     """
     candidate = resolution.get("resolved") or {}
-    route = candidate.get("legacy_route")
+    route = candidate.get("execution_route") or candidate.get("legacy_route")
     if not route:
         return {"state": "harness-unavailable", "reason": "resolved candidate has no configured execution adapter"}
     task = prompt_file.read_text(encoding="utf-8")
     code, evidence = run_consultation(route, workspace, task, primary=primary, caller="ekalavya")
-    return {"state": "completed" if code == 0 else "failed", "exit_code": code, "evidence": str(evidence)}
+    result: dict[str, object] = {"state": "completed" if code == 0 else "failed", "exit_code": code, "evidence": str(evidence), "retries": 0}
+    metadata = evidence / "execution.json"
+    if metadata.is_file():
+        import json
+        captured = json.loads(metadata.read_text(encoding="utf-8"))
+        for key in ("response_status", "response_recorded", "response_file", "request_count", "wall_seconds", "timed_out", "provider", "requested_model", "requested_effort", "transport"):
+            if key in captured:
+                result[key] = captured[key]
+    return result

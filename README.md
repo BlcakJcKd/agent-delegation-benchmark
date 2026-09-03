@@ -43,11 +43,20 @@ ekalavya bench                 # benchmark subsystem entry point
 ekalavya doctor [--json]
 ```
 
+Agent-facing instructions should use the `eka` interface:
+
+```text
+eka status --primary codex
+eka profiles
+eka models
+eka run <profile> --workspace DIR --prompt-file FILE --primary codex
+eka config
+```
+
 `eka` is an optional shorthand created by the user-level installer only when
 it is absent or already points to Ekalavya. An unrelated executable is never
-overwritten. Existing `ask-*`, `delegate-status`, `delegate-config`, and
-`ask-vllm` commands remain compatibility interfaces with their historical
-semantics.
+overwritten. Older command-line entry points remain installed as compatibility
+interfaces for existing scripts; they are not the agent-facing contract.
 
 `status`, `models`, `profiles`, `history`, and `spend` are read-only. The
 explicit `models refresh` path accepts provider discovery data and records new

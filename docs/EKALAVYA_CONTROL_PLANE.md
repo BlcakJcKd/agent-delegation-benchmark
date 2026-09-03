@@ -40,3 +40,5 @@ populate the same catalogue contract.
 The old `ask-*`, `delegate-status`, `delegate-config`, and `ask-vllm` commands
 remain compatibility commands. They retain their existing scope, closed
 stdin, recursion, timeout, process cleanup, and response-retention behavior.
+New agent instructions and examples use `eka` exclusively; compatibility
+entry points are retained for existing scripts during the deprecation period.

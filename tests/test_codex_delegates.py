@@ -153,8 +153,9 @@ class CodexRouteInstallAndMigrationTests(unittest.TestCase):
         installer = (root / "scripts" / "install-user-delegation.sh").read_text()
         for command in ("ask-terra", "ask-luna"):
             self.assertIn(command, pyproject)
-            self.assertIn(command, installer)
             self.assertTrue((root / "bin" / command).is_file())
+        self.assertIn("compatibility", installer)
+        self.assertIn("Canonical commands:", installer)
 
 
 if __name__ == "__main__":

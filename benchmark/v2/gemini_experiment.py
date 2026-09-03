@@ -308,16 +308,18 @@ def report() -> Path:
         lines.append(f"- {label}: {count}/{total} ({100 * count / total:.1f}%)" if total else f"- {label}: 0/0 (null)")
     lines += ["", "## Catalogue recommendation", "", "Keep Gemini 3.7 Flash Medium as current. Keep Gemini 3.6 Flash Medium as previous/supported fallback. Treat Gemini 3.8 Flash as the sole new candidate. Do not change the persistent default from this report.", "", "## Cost", "", "Actual: null; calculated: null; API-equivalent: null; billing mode: subscription; cost source: unavailable."]
     path = root / "REPORT.md"; path.write_text("\n".join(lines) + "\n")
-    try:
-        import matplotlib.pyplot as plt
-        labels = [f"{x['model'].replace('gemini-', '')}/{x['reasoning']}" for x in summary]
-        scores = [x["mean_score"] or 0 for x in summary]; walls = [x["mean_wall"] for x in summary]
-        for name, x, y, xlabel, ylabel in (("score-vs-wall", walls, scores, "mean wall seconds", "mean score"), ("reasoning-correctness", labels, scores, "model/reasoning", "mean score"), ("reasoning-task-time", labels, walls, "model/reasoning", "mean wall seconds")):
-            plt.figure(figsize=(9, 5)); plt.plot(x, y, "o-"); plt.xlabel(xlabel); plt.ylabel(ylabel); plt.xticks(rotation=35, ha="right"); plt.tight_layout(); plt.savefig(root / f"{name}.png"); plt.close()
-        if not any(x.get("tokens") for x in summary):
-            (root / "score-vs-tokens.txt").write_text("not generated: token telemetry unavailable for all attempts\n")
-    except ImportError:
-        (root / "plots-unavailable.txt").write_text("matplotlib unavailable\n")
+    from .plotting import plot_rows
+    labels = [f"{x['model'].replace('gemini-', '')}/{x['reasoning']}" for x in summary]
+    for row, label in zip(summary, labels):
+        row["label"] = label
+        row["tokens"] = None
+    plot_metadata = {
+        "score-vs-wall": plot_rows(summary, root / "score-vs-wall.png", x_key="mean_wall", y_key="mean_score", xlabel="mean wall seconds", ylabel="mean score"),
+        "score-vs-tokens": plot_rows(summary, root / "score-vs-tokens.png", x_key="tokens", y_key="mean_score", xlabel="tokens", ylabel="mean score"),
+        "reasoning-correctness": plot_rows(summary, root / "reasoning-correctness.png", x_key="label", y_key="mean_score", xlabel="model/reasoning", ylabel="mean score"),
+        "reasoning-task-time": plot_rows(summary, root / "reasoning-task-time.png", x_key="label", y_key="mean_wall", xlabel="model/reasoning", ylabel="mean wall seconds"),
+    }
+    (root / "plot-metadata.json").write_text(json.dumps(plot_metadata, indent=2, sort_keys=True) + "\n")
     return path
 
 

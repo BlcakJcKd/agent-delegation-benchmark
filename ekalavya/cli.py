@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -17,7 +18,7 @@ from . import __version__
 from .catalogue import load_catalogue, save_catalogue
 from .config import config_root, migrate_legacy_config
 from .executor import execute
-from .ledger import connect, default_db_path, record_availability, record_resolution, record_run, upsert_model
+from .ledger import connect, default_db_path, finalize_run, record_availability, record_resolution, record_run, upsert_model
 from .migrate import migrate_all
 from .resolver import resolve
 from .schema import CandidateIdentity, RunIntent
@@ -39,7 +40,7 @@ def _json_or_text(value: Any, as_json: bool) -> None:
 
 def cmd_status(args: argparse.Namespace) -> int:
     root, cat, prof = _paths(); entries = load_catalogue(cat); profiles = _profiles(prof)
-    result = {"product": "Ekalavya", "version": __version__, "config_root": str(root), "ledger": str(default_db_path()), "profiles": [{"name": p.get("name"), "default": p.get("default_identity_key"), "reasoning_policy": p.get("reasoning_policy", "overrideable"), "availability": "configured" if p.get("default_identity_key") else "not-configured"} for p in profiles], "catalogue": [{k: e.get(k) for k in ("provider", "family", "provider_model_id", "lifecycle", "identity_key")} for e in entries]}
+    result = {"product": "Ekalavya", "version": __version__, "primary": getattr(args, "primary", None), "config_root": str(root), "ledger": str(default_db_path()), "profiles": [{"name": p.get("name"), "default": p.get("default_identity_key"), "reasoning_policy": p.get("reasoning_policy", "overrideable"), "availability": "configured" if p.get("default_identity_key") else "not-configured"} for p in profiles], "catalogue": [{k: e.get(k) for k in ("provider", "family", "provider_model_id", "lifecycle", "identity_key")} for e in entries]}
     _json_or_text(result, args.json); return 0
 
 
@@ -116,6 +117,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         if not args.workspace:
             _json_or_text({"run_id": run_id, **record, "execution": {"state": "workspace-required", "reason": "a writable/read-only workspace must be explicit"}}, args.json); return 3
         execution = execute(record, args.prompt_file, args.workspace, primary=args.primary)
+        evidence = execution.get("evidence")
+        if evidence:
+            evidence_path = Path(str(evidence))
+            metadata_path = evidence_path / "execution.json"
+            digest = hashlib.sha256(metadata_path.read_bytes()).hexdigest() if metadata_path.is_file() else None
+            finalize_run(conn, run_id, status="completed" if execution.get("state") == "completed" else "failed", raw_evidence_path=str(evidence_path), raw_evidence_sha256=digest)
         _json_or_text({"run_id": run_id, **record, "execution": execution}, args.json); return 0 if execution.get("state") == "completed" else 4
     _json_or_text({"run_id": run_id, **record}, args.json); return 0 if resolution.state == "resolved" else 3
 
@@ -129,7 +136,7 @@ def _parser() -> argparse.ArgumentParser:
     p=argparse.ArgumentParser(prog="ekalavya", description="Ekalavya delegation control plane")
     p.add_argument("--version", action="version", version=__version__); sub=p.add_subparsers(dest="command", required=True)
     def common(q): q.add_argument("--json", action="store_true")
-    q=sub.add_parser("status", help="network-free catalogue/profile overview"); common(q); q.set_defaults(func=cmd_status)
+    q=sub.add_parser("status", help="network-free catalogue/profile overview"); q.add_argument("--primary"); common(q); q.set_defaults(func=cmd_status)
     q=sub.add_parser("profiles", help="list stable capability profiles, not raw model IDs"); common(q); q.set_defaults(func=cmd_profiles)
     q=sub.add_parser("models", help="list catalogue identities; never promotes or downloads"); q.add_argument("refresh", nargs="?", choices=["refresh"], default=None); q.add_argument("--source", type=Path); common(q); q.set_defaults(func=cmd_models)
     q=sub.add_parser("config", help="inspect or explicitly migrate user-owned configuration"); q.add_argument("migrate", nargs="?", choices=["migrate"], default=None); common(q); q.set_defaults(func=cmd_config)

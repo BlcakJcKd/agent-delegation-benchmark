@@ -91,39 +91,38 @@ class AuditResponseStatusTests(unittest.TestCase):
 
 
 class CanonicalGuidanceTests(unittest.TestCase):
-    def test_skill_contains_invocation_consumption_and_diagnosis_contract(self):
+    def test_skill_contains_the_agent_facing_ekalavya_contract(self):
         skill = (REPO_ROOT / "skills/delegation/SKILL.md").read_text()
         for required in (
-            "delegate-status --primary codex",
-            "ask-flash",
-            "ask-terra",
-            "ask-luna",
-            "ask-deepseek-flash",
-            "ask-deepseek-pro",
-            "ask-minimax-m3",
-            "ask-vllm <named-route>",
-            "textual consultation returned on stdout",
-            "Do not wait for or search for a review file",
-            "retry at most once",
-            "default `ask-*` timeout is 300 seconds",
-            "externally terminated/incomplete infrastructure run",
-            "exit code `124`",
-            "availability/config",
-            "model/response",
-            "no usable textual review records",
-            "SAME-PROVIDER WORK USES NATIVE AGENTS",
-            "Codex/OpenAI primary",
-            "Claude Code/Anthropic primary",
-            "Optional machine-local coding-agent harnesses",
-            "response_recorded=true",
-            "response_file",
-            "response-retention",
-            "HTTP 200",
-            "terminal/tool execution yield",
-            "poll or wait on that same handle",
-            "already-retained response",
+            "eka status --primary codex",
+            "eka profiles",
+            "eka models",
+            "eka run <profile>",
+            "eka config",
+            "Primary owns routing",
+            "same-provider-native-required",
+            "Codex/OpenAI → native Codex agents",
+            "Claude/Anthropic → native Claude subagents",
+            "Gemini → native Gemini facilities",
+            "--provider",
+            "--family",
+            "--model",
+            "--reasoning",
+            "--harness",
+            "previous",
+            "candidate",
+            "terminal or tool yield is not a delegate timeout",
+            "Do not blindly retry",
+            "Persistent Ekalavya configuration is user-owned",
+            "Missing token, cost, latency, or resource values remain null",
         ):
             self.assertIn(required, skill)
+        for legacy in (
+            "ask-flash", "ask-haiku", "ask-sonnet", "ask-terra", "ask-luna",
+            "ask-deepseek-pro", "ask-deepseek-flash", "ask-minimax-m3",
+            "ask-vllm", "delegate-status", "delegate-config",
+        ):
+            self.assertNotIn(legacy, skill)
 
     def test_policy_contains_copyable_prompt_author_block(self):
         policy = (REPO_ROOT / "docs/DELEGATION_POLICY.md").read_text()

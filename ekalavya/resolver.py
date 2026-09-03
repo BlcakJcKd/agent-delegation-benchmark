@@ -40,5 +40,10 @@ def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[st
         reasoning = policy.validate(intent.reasoning)
     except ValueError as exc:
         return Resolution(intent, None, reason=str(exc), state="invalid-reasoning", alternatives=alternatives)
+    supported_harnesses = tuple(caps.get("harness_values") or ())
+    if not supported_harnesses:
+        supported_harnesses = tuple(value for value in (chosen.get("harness"), chosen.get("serving_engine"), chosen.get("transport")) if value)
+    if intent.harness and intent.harness not in supported_harnesses:
+        return Resolution(intent, None, reason=f"unsupported harness {intent.harness!r}; supported: {list(supported_harnesses)!r}", state="invalid-harness", alternatives=alternatives)
     candidate = CandidateIdentity(**{k: chosen.get(k) for k in CandidateIdentity.__dataclass_fields__})
-    return Resolution(intent, candidate, reasoning, intent.harness or profile.get("harness"), chosen.get("transport"), "configured profile default" if default_key else "explicit sole candidate", "resolved", alternatives)
+    return Resolution(intent, candidate, reasoning, intent.harness or profile.get("harness") or chosen.get("harness") or chosen.get("serving_engine") or chosen.get("transport"), chosen.get("harness_version") or chosen.get("serving_engine_version"), chosen.get("transport"), chosen.get("legacy_route"), "configured profile default" if default_key else "explicit sole candidate", "resolved", alternatives)

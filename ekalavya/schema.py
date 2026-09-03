@@ -77,18 +77,31 @@ class Resolution:
     candidate: CandidateIdentity | None
     resolved_reasoning: Any = None
     resolved_harness: str | None = None
+    resolved_harness_version: str | None = None
     transport: str | None = None
+    execution_route: str | None = None
     reason: str = ""
     state: str = "resolved"
     alternatives: tuple[dict[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
+        resolved = self.candidate.as_dict() if self.candidate else None
+        if resolved is not None:
+            resolved.update({
+                "reasoning": self.resolved_reasoning,
+                "harness": self.resolved_harness,
+                "harness_version": self.resolved_harness_version,
+                "transport": self.transport,
+                "execution_route": self.execution_route,
+            })
         return {
             "requested": asdict(self.intent),
-            "resolved": self.candidate.as_dict() if self.candidate else None,
+            "resolved": resolved,
             "resolved_reasoning": self.resolved_reasoning,
             "resolved_harness": self.resolved_harness,
+            "resolved_harness_version": self.resolved_harness_version,
             "transport": self.transport,
+            "execution_route": self.execution_route,
             "reason": self.reason,
             "state": self.state,
             "alternatives": list(self.alternatives),

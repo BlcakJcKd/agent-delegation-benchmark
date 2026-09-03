@@ -39,6 +39,19 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
         result = resolve(RunIntent("local-coder", reasoning="high"), {"default_identity_key": c.identity_key}, [entry])
         self.assertEqual(result.state, "invalid-reasoning")
 
+    def test_harness_and_execution_route_are_resolved_without_coercion(self):
+        candidate = CandidateIdentity("claude", "haiku", "claude-haiku", capabilities={"reasoning_values": ["medium"], "harness_values": ["claude"]})
+        entry = dict(candidate.as_dict(), identity_key=candidate.identity_key, lifecycle="current", legacy_route="haiku", transport="claude", harness_version="1.2")
+        profile = {"default_identity_key": candidate.identity_key, "reasoning_policy": "fixed", "default_reasoning": "medium"}
+        resolved = resolve(RunIntent("haiku", harness="claude"), profile, [entry])
+        self.assertEqual(resolved.state, "resolved")
+        material = resolved.as_dict()["resolved"]
+        self.assertEqual(material["execution_route"], "haiku")
+        self.assertEqual(material["harness"], "claude")
+        self.assertEqual(material["harness_version"], "1.2")
+        invalid = resolve(RunIntent("haiku", harness="opencode"), profile, [entry])
+        self.assertEqual(invalid.state, "invalid-harness")
+
     def test_explicit_previous_model_is_selectable_without_changing_default(self):
         current = CandidateIdentity("gemini", "flash", "gemini-3.7-flash-medium", capabilities={"reasoning_values": ["medium"]})
         previous = CandidateIdentity("gemini", "flash", "gemini-3.6-flash-medium", capabilities={"reasoning_values": ["medium"]})

@@ -1,385 +1,117 @@
 ---
 name: delegation
 description: >
-  Teaches an agent how to use installed read-only external consultation
-  commands and configured shared vLLM routes, when they are worth using, and
-  how to check what is currently eligible. Use when deciding whether to
-  consult another model, when the user asks about delegation options, or
-  before invoking an ask-* wrapper or delegate-status.
+  Teaches agents how to use the Ekalavya delegation control plane safely,
+  including profile resolution, runtime selection, evidence, and ledger
+  verification.
 ---
 
-# Delegation
+# Ekalavya delegation
 
-You can consult another model read-only through installed global commands.
-This is optional capacity, not a requirement, and this skill is a thin
-discovery/judgement layer — it teaches when and how, not safety mechanics.
-All enforcement (recursion prevention, scope validation, the self-provider
-guard) lives in the installed code, not here.
+Ekalavya is an explicit delegation control plane. It is optional capacity, not
+an obligation. The primary agent remains responsible for routing, correctness,
+scope, and the final decision.
 
-## SAME-PROVIDER WORK USES NATIVE AGENTS
+## Start with state
 
-This is a routing invariant, not a preference:
-
-- **Codex/OpenAI primary:** Terra and Luna are same-provider workers. Use
-  native Codex agents. Never use `ask-terra` or `ask-luna` merely to launch
-  another Codex process for ordinary same-provider work.
-- **Claude Code/Anthropic primary:** Sonnet and Haiku are same-provider
-  workers. Use native Claude subagents. Never use `ask-sonnet` or `ask-haiku`
-  merely to launch another Claude process for ordinary same-provider work.
-- **Cross-provider:** Claude Code may use `ask-terra`/`ask-luna`; Codex may
-  use `ask-sonnet`/`ask-haiku`. These are valid because the target provider
-  differs from the primary.
-- **Gemini primary:** preserve the same-provider native-agent rule; use native
-  Gemini agents where supported and do not use `ask-flash` merely to call
-  Gemini again.
-
-`delegate-status --primary codex` therefore reports Terra/Luna as
-`native-only`, while `delegate-status --primary claude-code` reports enabled,
-executable-backed Terra/Luna routes as `available`. The reverse holds for
-Sonnet/Haiku. This avoids recursive CLI orchestration, preserves host-native
-supervision, avoids unnecessary context/process overhead, and keeps
-provider-recursion semantics explicit.
-
-## Canonical external-consultation workflow
-
-Use this sequence for every external consultation:
-
-1. Check effective availability without making a model call:
-
-   ```bash
-   delegate-status --primary codex
-   # or, for Claude Code:
-   delegate-status --primary claude-code
-   ```
-
-2. Choose only routes reported as `available`. Same-provider routes are
-   `native-only`; disabled or missing-executable routes are not substitutes.
-3. Prepare the minimum necessary scoped workspace and its read-only marker.
-4. Invoke the installed wrapper and capture its stdout and stderr:
-
-   ```bash
-   ask-flash --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary codex
-   ask-terra --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary claude-code
-   ask-luna --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary claude-code
-   ask-haiku --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary codex
-   ask-sonnet --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary codex
-   ask-deepseek-flash --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary codex
-   ask-deepseek-pro --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary codex
-   ask-minimax-m3 --workspace /absolute/scoped-copy \
-     --prompt-file /absolute/consultation-task.md --primary codex
-   ```
-
-5. Read the textual consultation returned on stdout. This is the normal
-   result channel. Do not wait for or search for a review file unless the task
-   specifically asked the delegate to create one; delegates are not required
-   to create files.
-6. Confirm that a successful wrapper recorded the response before integrating
-   it. The normal invariant is `exit_code=0`, `response_status=text-returned`,
-   non-empty response text, and `response_recorded=true` in `execution.json`.
-   The wrapper retains the response privately in the run directory before it
-   finalizes success; `response_file` is a stable run-relative locator and
-   does not expose the response in metadata.
-7. Extract useful findings, verify them against primary evidence, and
-   integrate only verified conclusions.
-8. If multiple delegates were used, record material agreement, disagreement,
-   and unique useful findings. Do not invent disagreement when none was
-   returned.
-
-The wrapper exits 0 only for a textual consultation result. A delegate process
-that exits 0 with blank stdout is surfaced as a model/response failure. A
-meaningful textual response such as “nothing material to add” is a valid
-no-addition result. The response is also retained in the audit run directory
-as `stdout.txt`; `stderr.txt` contains diagnostics and `execution.json`
-contains status and exit metadata. The evidence summary is on wrapper stderr,
-so it does not contaminate the consultation stdout stream.
-
-## Defaults
-
-- Delegation is allowed by default unless the user says otherwise for this
-  session or task.
-- You, the primary agent, stay the owner: architecture, integration,
-  verification, and the final answer are yours regardless of what a delegate
-  returns.
-- Prefer your own native subagent/task facility for same-provider work over
-  an external wrapper. Do not externally delegate back into your own
-  provider — `delegate-status` will show this as `native-only`, and the
-  wrapper itself rejects it if you declare your identity. In particular,
-  Codex uses native Terra/Luna agents and Claude Code uses native
-  Sonnet/Haiku subagents.
-- Gemini Flash is useful high-quota external capacity, not a mandatory first
-  choice. Do not consult it reflexively on every task.
-
-## Before delegating: check what's eligible
-
-Run this first — it makes zero model calls:
+Use the canonical Ekalavya commands before considering an external call:
 
 ```bash
-delegate-status --primary <your-identity>
+eka status --primary codex
+eka profiles
+eka models
+eka history
 ```
 
-Use `claude-code` if you are Claude Code, `codex` for Codex, `gemini` (or
-`antigravity`) for Antigravity/Gemini, `manual` for a human-invoked call, or
-omit `--primary` if genuinely unknown. This reports, per route, whether it's
-configured enabled/disabled (with a reason if the user set one), whether
-it's `external` (usable via a wrapper), `same-provider`/`native-only` (use
-your own native mechanism instead — the wrapper will reject it), or
-`disabled` (respect this; do not route around it), and whether the external
-executable is actually on PATH. Add `--json` for machine-readable output.
+Use `eka doctor` for a health check and `eka config` to inspect persistent
+configuration. These commands are safe to run from any working directory and
+do not perform inference. `eka models refresh` is explicit and discovery-only;
+it records new identities as candidates and never promotes them or changes a
+profile default.
 
-Respect what you see. A disabled provider or route is user-owned
-configuration (`delegate-config`) — read it, don't override it. If the user
-gives a task-specific instruction ("don't use Codex for this"), treat that
-as a session constraint on top of the persistent config, not a reason to run
-`delegate-config` yourself. You may read and report config; you should not
-change it on your own judgement (e.g. because you think quota looks low) —
-persistent mutation is the user's call, made explicitly or via
-`delegate-config` directly.
+## Primary owns routing
 
-## When delegation is worth it
+The primary decides whether to delegate, how much context to provide, and to
+whom. `eka run <profile>` explicitly selects that profile's configured
+default. Ekalavya has no silent provider or model failover. An unavailable,
+ambiguous, or invalid resolution is an actionable result, not permission to
+try a different provider implicitly.
 
-Delegate only when one of these holds:
+## Same-provider native rule
 
-- **Verification is materially cheaper than generation.** A delegate can
-  scan a scoped workspace and return file:line evidence faster than you
-  re-deriving it, and the claim is cheap for you to check against the real
-  files.
-- **Independent reasoning/critique adds value.** A second, differently
-  biased read of the same evidence before you commit to a conclusion.
+Same-provider work belongs to the provider's native agent facility:
 
-If neither applies, do the work directly.
+- Codex/OpenAI → native Codex agents
+- Claude/Anthropic → native Claude subagents
+- Gemini → native Gemini facilities
 
-Good candidates: repository reconnaissance, file:line evidence gathering,
-targeted test-failure diagnosis, data/plot inspection, bounded analysis,
-alternative hypotheses, a first-pass review, mechanical investigation that's
-cheap to verify.
+When an external Ekalavya execution would violate this rule, resolution must
+return `same-provider-native-required`. The primary decides whether to use its
+native facility or stop. Cross-provider Ekalavya execution remains explicit.
 
-Keep for yourself: architecture, scientifically or security-sensitive
-interpretation, difficult numerical reasoning, final integration, anything
-expensive to independently verify.
+## Runtime selection
 
-## Invoking a delegate
+When the selected backend exposes them, `eka run` supports explicit overrides:
 
 ```bash
-ask-flash  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-terra  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-luna   --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-haiku  --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-sonnet --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-deepseek-flash --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-deepseek-pro --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
-ask-minimax-m3 --workspace /absolute/scoped-copy --prompt-file /absolute/task.md --primary <your-identity>
+eka run <profile> --provider <provider> --family <family> \
+  --model <provider-model-id> --reasoning <setting> --harness <harness> \
+  --workspace /absolute/scoped-workspace \
+  --prompt-file /absolute/task.md --primary <primary-identity>
 ```
 
-Capture both streams. The delegate's consultation is returned on stdout; the
-wrapper's evidence path and diagnostics are on stderr. The response itself is
-the primary output. Do not confuse the audit path or absence of a generated
-review file with the consultation result.
+Only values actually supported by the selected backend may be used.
+Unsupported provider, family, model, reasoning, or harness values must fail
+before inference. Never silently coerce a requested value. The ledger records
+both the requested value and the exact resolved value.
 
-## Optional experimental PAYG delegates
+## Profiles and model lifecycle
 
-`ask-deepseek-pro`, `ask-deepseek-flash`, and `ask-minimax-m3` exist as the
-same kind of read-only consultation wrapper, routed through independently
-verified Codex provider-profile launchers (`codex-deepseek`/`codex-minimax`)
-rather than OpenAI's own Codex inference — see
-[docs/PAYG_DELEGATES.md](../../docs/PAYG_DELEGATES.md) for the transport
-distinction. They are **experimental PAYG routes**: a two-task objective +
-blind-review benchmark has now evaluated them (see
-[docs/PAYG_BENCHMARK_2026-08.md](../../docs/PAYG_BENCHMARK_2026-08.md) and
-[docs/DELEGATION_POLICY.md](../../docs/DELEGATION_POLICY.md) for the
-evidence-guided per-route roles), but they remain **disabled by default and
-metered/opt-in** on every install — evidence about quality does not change
-that. Do not mechanically prefer DeepSeek Flash for every task just because
-it led that crossover; apply the same task-fit judgement you would for any
-other route.
+Profiles are stable worker/capability abstractions, not aliases that promise a
+permanent provider model. Exact provider and model IDs are resolved at
+execution time and recorded. Catalogue identities may be `current`, `previous`
+(supported fallback), or `candidate`. New discovery creates candidates only;
+new models are never automatically promoted. Historical identities remain
+available for audit even when they are no longer selectable.
 
-They default to **disabled** on every install; a disabled route in
-`delegate-status` means exactly that — do not route around it by invoking
-the wrapper directly, and do not ask the user to enable one merely to try
-it out. Only use one if `delegate-status --primary <your-identity>` already
-reports it `available` (the user explicitly enabled it via `delegate-config`
-or `delegate-config enable deepseek-pro`/`deepseek-flash`/`minimax-m3`).
-Because each call draws down a metered balance, treat one as a deliberate,
-non-default choice, not a first reach — and remember these routes reach
-DeepSeek/MiniMax inference specifically, not Codex's own OpenAI models, even
-though the transport is `codex exec`; the self-provider guard below already
-accounts for this and will reject/allow correctly regardless of which CLI
-you are.
+## External delegation contract
 
-Give the delegate the minimum necessary scope:
+For an external call:
 
-1. A dedicated directory with only files safe to disclose — no credentials,
-   no unrelated project data, no symlinks.
-2. `.delegation-scope.json` containing `{"mode": "read-only"}`.
-3. A specific task in the prompt, not the whole surrounding context.
+1. Check status and profile resolution first.
+2. Provide only bounded context in a disposable, declared workspace.
+3. Use an explicit timeout appropriate to the task.
+4. Read stdout and the retained response evidence.
+5. Verify the result against the task and workspace contract.
+6. Reconcile disagreements with other evidence; the primary owns final
+   correctness.
 
-Read-only consultation is the default and, in this version, the only
-supported mode — no wrapper here grants write access.
+A terminal or tool yield is not a delegate timeout. A timeout is an explicit
+execution outcome. Do not blindly retry: preserve the first result and
+determine whether a retry is justified by the task and evidence.
 
-## After a delegate responds
+## Shared and local resources
 
-Treat every claim as a hypothesis, not a fact. Read the returned stdout first,
-then read the cited file:line evidence yourself, re-run any verification
-command it proposes if safe, and only act once you've independently confirmed
-it. Logs land under the installed state directory (`delegate-status` shows the
-path) as `prompt.md`/`stdout.txt`/`stderr.txt`/`execution.json` — plain private
-files, read them like any other. `stdout.txt` is the wrapper-retained
-response, not a delegate-created deliverable. If terminal output was lost,
-read `execution.json`, verify `response_recorded=true`, then read the
-run-relative `response_file` from that same evidence directory. Recover an
-already-retained response before considering another model call.
+Respect backend-specific concurrency, quota, and resource state. Do not change
+machine, server, GPU, provider, or harness policy merely to satisfy a
+delegation. If the selected backend cannot meet the isolation or selection
+contract, report it as unavailable rather than weakening the contract.
 
-HTTP 200 or a zero process exit alone is not evidence of a usable retained
-result. A `text-returned` record with `response_recorded=false` is a
-`response-retention` infrastructure failure; do not classify it as provider or
-model quality and do not retry solely because terminal stdout was lost.
+## User-owned configuration
 
-## Failure diagnosis and bounded recovery
+Persistent Ekalavya configuration is user-owned. Agents may read and respect
+it, and may use an explicitly requested one-shot override. Do not permanently
+change profiles, catalogue lifecycle, provider settings, defaults, or resource
+policy unless the user explicitly instructs that change.
 
-If an `ask-*` command fails, inspect its exit status, stderr, evidence path,
-`execution.json`, route status, and scope declaration before classifying it.
-Classify the cause as one of: availability/config, scope/sandbox,
-recursion/provider guard, launcher/executable, authentication,
-provider/API/transport, response-retention, wrapper/runtime, or
-model/response. A non-zero exit is not a model-quality score, and a missing
-review file is not evidence of any failure. Never report a delegate as
-“non-functional” without the underlying diagnosis.
+## Ledger and evidence
 
-If the cause is safe, local, bounded infrastructure within the task scope,
-repair that cause and retry at most once. Never use a blind retry loop or
-silently substitute another provider. If no safe repair is possible, report
-the exact blocker and continue with the primary task where possible. Do not
-expose secrets while inspecting diagnostics.
+Runs are recorded in the private Ekalavya ledger where supported. Requested
+intent, resolved provider/model identity, reasoning, harness and version,
+adapter/transport, benchmark identity, execution telemetry, tool events,
+resource observations, and cost evidence are distinct fields. Missing token, cost, latency, or resource values remain null; never invent them. Actual,
+calculated, and API-equivalent cost must remain separately labelled.
 
-Delegation is complete only when each requested external route is accounted
-for as one of:
-
-- **Success:** textual response returned, inspected, and useful findings
-  integrated or explicitly rejected after verification.
-- **Valid no-addition:** the delegate explicitly returned a meaningful
-  statement that it had nothing material to add.
-- **Diagnosed infrastructure failure:** the exact failure category and reason
-  are known.
-- **Diagnosed model/response failure:** the provider completed, but its
-  response was empty, malformed, or unusable.
-
-An ambiguous “no usable textual review records” state is not completion.
-
-## Shared OpenAI-compatible/vLLM routes
-
-Some machines may have an explicitly configured named route for a shared
-OpenAI-compatible vLLM service. Check `delegate-status --primary <identity>`
-first, then use `ask-vllm <named-route>` only for tightly
-scoped, read-only consultation when the route is deliberately selected. It is
-not an automatic fallback for any other provider and must not be used for
-parallel fan-out, speculative requests, nested delegation, or unconstrained
-coding-agent sessions. The direct adapter sends one bounded Chat Completions
-request, defaults to `enable_thinking = false`, uses a machine-local
-single-request lock, and has no automatic retry or cloud substitution.
-
-Its exact invocation differs slightly from the provider wrappers: the route
-is positional and there is no `--primary` flag.
-
-```bash
-ask-vllm <named-route> --workspace /absolute/scoped-copy \
-  --prompt-file /absolute/minimal-task.md
-```
-
-Shared-compute routes must respect their configured concurrency and runtime
-policy. In particular, do not perform speculative fan-out, do not substitute
-another provider automatically, and respect a configured non-thinking default.
-An unavailable server is an infrastructure-availability failure, not evidence
-that the model produced a poor response; keep those diagnoses separate.
-
-Before invoking a named shared OpenAI-compatible route, inspect its effective
-local capabilities with `delegate-status --primary <primary>`. For substantial
-shared-route work, `delegate-status --primary <primary> --live` may be used
-when the explicit GET-only observability check is worth its small overhead;
-do not make it mandatory for tiny requests. Treat `IDLE` as ordinary capacity,
-`ACTIVE` as a reason to keep work short, `PRESSURED` as a reason to defer
-substantial work, and `UNKNOWN` as a reason to use conservative shared-compute
-policy. Respect the reported output budget: never request `max_tokens` above
-the configured local route cap, and choose a task and output format that fit.
-If the task does not fit, do not invoke that route. A local validation exit
-such as exit code 2 means no inference occurred and is not model-quality
-evidence. Distinguish a local route policy from a remote server/model maximum.
-Live scheduler state is not GPU utilization. A suitable alternate provider may
-be selected before invocation when policy and availability allow, but do not
-silently switch providers after validation failure.
-
-The named route configuration and redacted JSONL reliability records are
-machine-local; never commit them or put credentials in prompts, config,
-fixtures, logs, or diagnostics. See
-`docs/VLLM_DELEGATES.md` in the source repository for the configuration and
-reporting contract. A Codex primary-model configuration is a separate audit:
-do not assume a Chat Completions-only endpoint is compatible with Codex's
-Responses transport.
-
-## Optional machine-local coding-agent harnesses
-
-Some users may separately configure a local, write-capable coding-agent
-harness for controlled benchmark work. It is not an `ask-*` route, is not
-reported by `delegate-status`, and must never be treated as a drop-in
-replacement for a read-only consultation. The generic benchmark
-`[command_agents]` mapping is deliberately machine-local: it supplies an argv
-command, appends the frozen task prompt, and runs only in a copied benchmark
-workspace.
-
-Do not assume such a harness exists or invoke an arbitrary local launcher.
-Use one only when the user explicitly identifies it or asks you to inspect
-their user-owned local benchmark configuration. In a benchmark context,
-validate the selected name without a model call first:
-
-```bash
-python -m benchmark.runner preflight --agents <local-agent> --tasks <task-id>
-```
-
-There is intentionally no general `delegate-agent` write interface today.
-Before any explicit write-capable run, the primary must establish the copied
-workspace, allowed scope, sandbox semantics, timeout, no-retry/no-fallback
-policy, and its own independent diff/test verification. The primary remains
-responsible for architecture, integration, and final correctness.
-
-## Timeout and cancellation semantics
-
-The default `ask-*` timeout is 300 seconds. If a shorter operational bound is
-needed, pass it explicitly, for example:
-
-```bash
-ask-haiku --workspace /absolute/scoped-copy \
-  --prompt-file /absolute/task.md --primary codex --timeout 90
-```
-
-Do not infer a timeout merely because `stdout.txt` or `execution.json` has not
-appeared while the command is still running. Those audit files are finalized
-after the delegate subprocess returns or after the wrapper catches its own
-timeout; they are not a live-progress indicator. A genuine wrapper timeout is
-recorded as exit code `124` with `timed_out: true` and finalized audit files.
-
-If a parent agent, shell supervisor, or operator manually kills the wrapper
-before that point, the run may have no finalized audit record. Classify that as
-an externally terminated/incomplete infrastructure run, not as a wrapper
-timeout or model failure. Do not terminate a healthy wrapper solely because
-its audit files are still absent; either wait for the configured bound or set
-the bound explicitly before invoking it.
-
-A terminal/tool execution yield or UI wait is a property of the caller's
-supervisor, not the delegate timeout. For example, a 30-second terminal wait
-returning no visible stdout does not mean a wrapper with a 300-second timeout
-finished or failed. If the execution tool returns a live process/session
-handle, poll or wait on that same handle until completion; never launch a
-replacement delegate. If completion metadata later says the provider
-succeeded but stdout is absent, inspect the retained-response metadata and
-recover the existing response instead of rerunning inference.
-
-## Recursion is prohibited
-
-An approved wrapper (`ask-flash`/`ask-haiku`/`ask-sonnet`) refuses to run
-if it's already executing inside a delegated context. Never work around
-this. A delegate must never call another delegate.
+For a completed call, verify the response-retention metadata and the ledger
+entry before relying on the result. A retained response is evidence of what was
+returned, not proof that the answer is correct.
