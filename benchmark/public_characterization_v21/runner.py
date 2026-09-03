@@ -49,7 +49,9 @@ def _baseline(x,w):
     return {"family":x.family,"seed":x.seed,"task_id":x.task_id,"baseline_score":c["score"],"baseline_check_vector":c["check_vector"],"visible_check_vector":v["check_vector"],"visible_controller_agree":v["ok"] and c["check_vector"]==v["check_vector"],"generated_workspace_hash":workspace_digest(w),"prompt_hash":digest(x.prompt.encode()),"visible_verifier_hash":x.visible_verifier_hash,"task_spec_hash":x.task_spec_hash,"allowed_edit_manifest_hash":x.edit_scope_hash,"checks":[z["name"] for z in c["checks"]]}
 def _reference_ok(result,seed):
     ref=result.get("reference_validation") or {};tasks={z.get("family"):z for z in ref.get("tasks",[]) if isinstance(z,dict)}
-    return bool(ref.get("passed")) and ref.get("suite")==SUITE_NAME and ref.get("version")==SUITE_VERSION and ref.get("seed")==seed and ref.get("suite_git_sha")==((result.get("provenance") or {}).get("git_sha")) and ref.get("temporary_reference_repair_deleted") is True and ref.get("gold_source_retained") is False and all(tasks.get(x["family"],{}).get("score")==100.0 and tasks.get(x["family"],{}).get("check_vector")==[True]*CHECK_COUNT and tasks.get(x["family"],{}).get("visible_check_vector")==[True]*CHECK_COUNT for x in result["tasks"])
+    partials=ref.get("partial_probes") or {}
+    partial_gate=all(len({tuple(item.get("check_vector",[])) for item in probes.values()})>=3 and all(item.get("score",100.0)<100.0 and len(item.get("check_vector",[]))==CHECK_COUNT for item in probes.values()) for probes in partials.values()) and set(partials)==set(FAMILIES)
+    return bool(ref.get("passed")) and ref.get("suite")==SUITE_NAME and ref.get("version")==SUITE_VERSION and ref.get("seed")==seed and ref.get("suite_git_sha")==((result.get("provenance") or {}).get("git_sha")) and ref.get("temporary_reference_repair_deleted") is True and ref.get("gold_source_retained") is False and partial_gate and all(tasks.get(x["family"],{}).get("score")==100.0 and tasks.get(x["family"],{}).get("check_vector")==[True]*CHECK_COUNT and tasks.get(x["family"],{}).get("visible_check_vector")==[True]*CHECK_COUNT for x in result["tasks"])
 def validate_preflight(*,require_reference=False,seed=SEED):
     result={"suite":SUITE_NAME,"version":SUITE_VERSION,"evaluation_class":EVALUATION_CLASS,"seed":seed,"tasks":[],"provenance":None,"reference_validation":None}
     try:result["provenance"]=validate_git_identity(Path(__file__).resolve().parents[2],SOURCE_PATHS)
@@ -163,4 +165,3 @@ def main(argv=None):
     if action=="report":print(report());return 0
     raise SystemExit(f"unknown command: {action}")
 if __name__=="__main__":raise SystemExit(main())
-
