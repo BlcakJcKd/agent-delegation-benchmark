@@ -67,7 +67,7 @@ class LiveStatusTests(unittest.TestCase):
         self.temp = TemporaryDirectory()
         root = Path(self.temp.name)
         self.config_home = root / "config"
-        config_dir = self.config_home / "agent-delegation"
+        config_dir = self.config_home / "ekalavya"
         config_dir.mkdir(parents=True)
         self.vllm_path = config_dir / "vllm.toml"
         self.vllm_path.write_text(

@@ -1,202 +1,29 @@
 # Claude Code orchestration
 
-How Claude Code acts as primary owner of this repository and, when useful,
-consults OpenAI/Codex Terra/Luna or Gemini Flash through approved wrappers. Read
-[DELEGATION_POLICY.md](DELEGATION_POLICY.md) first; this document is the
-Claude-Code-specific operational supplement, not a replacement for it.
+Claude Code owns its native Claude subagents. Ekalavya is the single
+supported interface for an explicitly requested external provider call.
 
-## Claude Code as primary owner
-
-Claude Code can run every phase of this repository's work directly: reading
-code, running tests, editing files, and deciding what changes to make. It
-owns architecture, implementation, validation, integration, and final
-conclusions. Nothing in `delegation/` assumes a Codex parent process or
-Codex-specific environment; the wrappers are plain subprocess calls invoked
-the same way regardless of which agent's `Bash` tool runs them.
-
-This applies whether Claude Code is working inside this repository or in an
-entirely different project: once installed (see
-[USER_INSTALLATION.md](USER_INSTALLATION.md)), `ask-terra`, `ask-luna`,
-`ask-flash`,
-`delegate-status`, and `delegate-config` are ordinary commands on `PATH`,
-independent of this checkout.
-
-## Cross-provider routes and native Claude workers
-
-Claude Code may use `ask-terra` and `ask-luna` as external OpenAI/Codex
-consultation routes when `delegate-status --primary claude-code` reports them
-available. Sonnet and Haiku are Claude's same-provider workers: use native
-Claude subagents, and never use `ask-sonnet` or `ask-haiku` merely to launch
-another Claude process. Codex has the reciprocal rule: Terra/Luna are native
-Codex workers there, while `ask-sonnet`/`ask-haiku` are valid cross-provider
-routes.
-
-## Gemini Flash is optional spare capacity, not mandatory
-
-Flash is a cheap, high-quota, read-only consultation delegate — not a
-required step. Do not mechanically consult it on every task.
-
-## When delegation is worth it
-
-Delegate to Flash only when one of these holds:
-
-- **Verification is materially cheaper than generation.** Flash can scan a
-  workspace and report file:line evidence faster than re-deriving it, and
-  its claims are cheap to check against the real files.
-- **Independent reasoning/critique adds diversity.** A second, differently
-  biased read of the same evidence is useful before committing to a
-  conclusion.
-
-If neither applies, do the work directly — the context-preparation and
-verification overhead is not free.
-
-## Preparing a scoped workspace
-
-Flash never receives more than it needs and never receives write access.
-
-1. Create a dedicated directory containing only files safe to disclose. Do
-   not include credentials, `private_admin/`, `blind_map.json`, or another
-   task's evidence.
-2. Ensure it contains no symlinks (`_validate_scope` in `delegation/core.py`
-   rejects any).
-3. Add `.delegation-scope.json`:
-
-   ```json
-   {"mode": "read-only"}
-   ```
-
-   This is an operator assertion, not a security boundary — Flash still runs
-   in `agy --mode plan --sandbox`, which is a product-level control, not a
-   cryptographic one.
-
-## Check what's eligible first
+Before a call:
 
 ```bash
-delegate-status --primary claude-code
+eka status --primary claude-code
+eka profiles
+eka models
 ```
 
-Zero model calls. Shows, per route, its configured state (with any reason
-the user set), whether it's `external`, `same-provider`/`native-only`, or
-`disabled`, and whether the wrapper's executable is actually on PATH. Add
-`--json` for machine-readable output. Respect a disabled route or provider —
-it's user-owned configuration (see
-[DELEGATE_CONFIGURATION.md](DELEGATE_CONFIGURATION.md)); read and report it,
-don't work around it or change it on your own judgement.
+Use `eka run <profile>` with a disposable workspace, bounded prompt file, and
+explicit timeout. Select `--provider`, `--family`, `--model`, `--reasoning`,
+or `--harness` only when the resolved backend advertises the requested value.
+The resolver rejects unsupported values before inference and records the
+requested/resolved identity.
 
-## Invoking ask-flash
+Same-provider Claude work belongs to native Claude facilities. Ekalavya
+returns `same-provider-native-required` for an external Claude-to-Claude
+attempt. The primary must verify retained response evidence and reconcile any
+disagreement before accepting the result.
 
-```bash
-ask-flash --workspace /absolute/scoped-copy \
-  --prompt-file /absolute/consultation-task.md --timeout 300 \
-  --caller claude-code --primary claude-code
-
-ask-terra --workspace /absolute/scoped-copy \
-  --prompt-file /absolute/consultation-task.md --timeout 300 \
-  --caller claude-code --primary claude-code
-
-ask-luna --workspace /absolute/scoped-copy \
-  --prompt-file /absolute/consultation-task.md --timeout 300 \
-  --caller claude-code --primary claude-code
-```
-
-(`bin/ask-flash` inside this checkout is equivalent for development; the
-installed `ask-flash` command works identically from any directory, in any
-project, once installed.)
-
-`--caller` is optional, provenance-only metadata (falls back to
-`$AGENT_DELEGATION_CALLER`, then `"unknown"`). It is recorded in
-`execution.json` for audit purposes and never used to make a safety
-decision. `--primary` is a separate, distinct mechanism — see "Two distinct
-guards" below.
-
-## Inspecting results and logs
-
-The command's stdout is the delegate's textual consultation and is the first
-thing the primary must capture and read. Do not wait for a generated review
-file: the delegate is not required to create one. The wrapper durably retains
-the response privately before finalizing success; the audit directory is both
-the recovery copy and diagnosis record.
-
-Each call writes a timestamped directory under `delegate_runs/` (or
-`--log-root`), outside the consulted workspace:
-
-- `prompt.md` — exact prompt sent
-- `stdout.txt` / `stderr.txt` — private raw delegate output (`stdout.txt` is
-  the retained response replayed on wrapper stdout; wrapper metadata and
-  diagnostics are on stderr)
-- `execution.json` — delegate, caller, requested model/effort, workspace,
-  timing, exit code, response status, redacted argv, timeout state, and the
-  response-retention invariant/locator
-
-Read these with the `Read` tool like any other file; nothing about them
-requires special handling.
-
-## Verifying findings
-
-Treat every claim Flash returns as a hypothesis, not a fact:
-
-1. Read the cited file:line evidence directly.
-2. Re-run any verification command it proposes, if safe to do so.
-3. Only act on a claim once you have independently confirmed it against the
-   real files or test output.
-
-## Two distinct guards
-
-**Recursion-depth guard.** `primary -> delegate` is allowed.
-`delegate -> ask-*` (including `ask-terra`/`ask-luna`) is rejected by the wrapper
-itself: `run_consultation` checks the inherited `AGENT_DELEGATION_DEPTH`
-environment marker and refuses to proceed (no subprocess is launched) if it
-is already present and >= 1, including a malformed value. Every spawned
-delegate's environment has `AGENT_DELEGATION_DEPTH=1` set explicitly, so a
-delegate that tried to call an approved wrapper again would be rejected.
-This only protects the approved wrappers in `delegation/`; it cannot stop a
-delegate from invoking some other installed CLI directly if its own sandbox
-permits that.
-
-**Self-provider guard.** A declared `--primary` cannot externally call its
-own provider: e.g. `ask-haiku --primary claude-code` is rejected before
-launching anything, because same-provider work should go through Claude's
-own native subagent capability, not a recursive-feeling external hop.
-`delegate-status --primary claude-code` shows this as `route_type:
-same-provider`, `effective: native-only`. Unlike the recursion guard, this
-is based on a caller-declared value, not an inherited environment marker —
-it is a routing/policy nudge, not a security boundary, and it is only
-enforced when `--primary` is actually given (an absent value is unenforced,
-never assumed). The Python runtime cannot detect or prevent a host from
-using its own native agent feature; it can only refuse to be misused as a
-same-provider external hop. `AGENT_DELEGATION_DEPTH` and `--primary` are
-independent — either can reject a call regardless of the other's state.
-
-The same guard rejects `ask-terra`/`ask-luna --primary codex`. That is
-intentional: `delegate-status --primary codex` reports both as `native-only`,
-while Claude Code sees them as external routes when configured and the normal
-`codex` executable is available.
-
-## Minimal example
-
-```text
-Claude Code (primary)
-  -> delegate-status --primary claude-code (zero model calls; check eligibility)
-  -> prepare scoped copy (no symlinks, .delegation-scope.json present)
-  -> ask-flash --workspace <scoped-copy> --prompt-file <task.md> --caller claude-code --primary claude-code
-  -> capture/read ask-flash stdout (audit backup: <state-log-dir>/delegate_runs/<timestamp>-flash-*/stdout.txt)
-  -> independently verify every cited file:line claim
-  -> decide whether to act, and act directly (Flash has no write access)
-```
-
-## Current limitations
-
-- No implementation/write delegation exists yet; only read-only consultation.
-- The scope marker is an operator assertion, not enforced isolation; prepare
-  the workspace carefully.
-- Claude's own CLI has no Codex-equivalent hard workspace-read sandbox; its
-  CWD and restricted tool set are operational controls, not a filesystem
-  containment guarantee.
-- The recursion guard is environment-based; it protects the approved
-  wrappers, not arbitrary CLI invocation by a delegate.
-- The self-provider guard only applies when `--primary` is declared, and
-  only prevents this runtime being misused as a same-provider external hop
-  — it cannot detect or invoke a host's native agent feature itself.
-- Quota/usage availability is user-managed in this version; nothing here
-  auto-disables a route by threshold. See
-  [DELEGATE_CONFIGURATION.md](DELEGATE_CONFIGURATION.md).
+Do not alter persistent configuration, provider defaults, shared resource
+limits, or machine policy merely to satisfy a task. Use `eka config` only for
+an explicitly authorized user-owned availability change. `eka doctor` is the
+stable health check; `eka status --live` is an explicit GET-only resource
+observation.

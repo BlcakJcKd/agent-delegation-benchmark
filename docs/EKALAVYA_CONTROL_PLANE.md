@@ -37,8 +37,7 @@ explicit file-driven discovery path in V1; it marks entries as candidates and
 does not contact providers or change defaults. A future provider adapter may
 populate the same catalogue contract.
 
-The old `ask-*`, `delegate-status`, `delegate-config`, and `ask-vllm` commands
-remain compatibility commands. They retain their existing scope, closed
-stdin, recursion, timeout, process cleanup, and response-retention behavior.
-New agent instructions and examples use `eka` exclusively; compatibility
-entry points are retained for existing scripts during the deprecation period.
+Pre-cutover delegation entry points are no longer part of the supported
+installation surface. Operational instructions use `eka`/`ekalavya`, while
+the safety-hardened adapters retain their scope, closed-stdin, recursion,
+timeout, process-cleanup, and response-retention guarantees.

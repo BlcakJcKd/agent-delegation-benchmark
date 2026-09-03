@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-APP_NAME = "agent-delegation"
+APP_NAME = "ekalavya"
 
 
 def config_dir() -> Path:

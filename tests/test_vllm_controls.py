@@ -15,11 +15,11 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from delegation.config import load_config, set_enabled
-from delegation.config_cli import main as config_main
 from delegation.config_tui import build_rows, rows_to_config, toggle
 from delegation.status import compute_status
 from delegation.status_cli import build_report
 from delegation.vllm import inspect_vllm_routes
+from ekalavya.cli import main as eka_main
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +43,7 @@ class VLLMControlTests(unittest.TestCase):
         self.temp = TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.config_home = self.root / "config"
-        self.config_dir = self.config_home / "agent-delegation"
+        self.config_dir = self.config_home / "ekalavya"
         self.config_dir.mkdir(parents=True)
         self.vllm_path = self.config_dir / "vllm.toml"
         write_vllm(self.vllm_path)
@@ -54,29 +54,28 @@ class VLLMControlTests(unittest.TestCase):
         self.xdg.stop()
         self.temp.cleanup()
 
-    def test_delegate_config_discovers_route_and_displays_local_model_policy_offline(self):
+    def test_eka_config_discovers_route_and_displays_local_model_policy_offline(self):
         output = io.StringIO()
         with patch("delegation.vllm.urllib.request.urlopen", side_effect=AssertionError("network call")), redirect_stdout(output):
-            self.assertEqual(config_main(["list"]), 0)
+            self.assertEqual(eka_main(["config", "list"]), 0)
         text = output.getvalue()
         self.assertIn("lab-qwen", text)
         self.assertIn("Qwen/example-model", text)
-        self.assertIn("shared vLLM / OpenAI-compatible", text)
-        self.assertIn("shared compute: yes", text)
-        self.assertIn("concurrency: 1", text)
-        self.assertIn("thinking default: off", text)
-        self.assertIn("output default: 128 tokens", text)
-        self.assertIn("output cap: 128 tokens", text)
+        self.assertIn('"shared_compute": true', text)
+        self.assertIn('"max_concurrency": 1', text)
+        self.assertIn('"thinking_default": false', text)
+        self.assertIn('"default_max_tokens": 128', text)
+        self.assertIn('"max_tokens_cap": 128', text)
         self.assertNotIn("example.invalid", text)
 
     def test_enable_disable_route_persists_only_availability_and_preserves_vllm_definition(self):
         before = self.vllm_path.read_text()
-        self.assertEqual(config_main(["disable", "lab-qwen", "--reason", "maintenance"]), 0)
+        self.assertEqual(eka_main(["config", "disable", "lab-qwen", "--reason", "maintenance"]), 0)
         config = load_config()
         self.assertFalse(config["vllm"]["lab-qwen"]["enabled"])
         self.assertEqual(config["vllm"]["lab-qwen"]["reason"], "maintenance")
         self.assertEqual(self.vllm_path.read_text(), before)
-        self.assertEqual(config_main(["enable", "lab-qwen"]), 0)
+        self.assertEqual(eka_main(["config", "enable", "lab-qwen"]), 0)
         config = load_config()
         self.assertTrue(config["vllm"]["lab-qwen"]["enabled"])
         self.assertNotIn("reason", config["vllm"]["lab-qwen"])
@@ -144,7 +143,7 @@ class VLLMControlTests(unittest.TestCase):
         route_info = inspect_vllm_routes(self.vllm_path)
         with patch("delegation.vllm.urllib.request.urlopen", side_effect=AssertionError("network call")) as urlopen:
             build_report("codex", config=load_config(), vllm_routes=route_info, which=lambda _: "/bin/example")
-            config_main(["list"])
+            eka_main(["config", "list"])
         urlopen.assert_not_called()
 
 

@@ -69,6 +69,7 @@ class RunIntent:
     workspace: str | None = None
     prompt_file: str | None = None
     primary: str | None = None
+    timeout_seconds: int | None = None
 
 
 @dataclass(frozen=True)

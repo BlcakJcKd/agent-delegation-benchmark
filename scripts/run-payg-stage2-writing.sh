@@ -129,6 +129,6 @@ python -m benchmark.runner run \
 
 echo
 echo "Results: runs/$RUN_LABEL"
-echo "Remember: this does not change delegate-config. deepseek/minimax PAYG"
+echo "Remember: this does not change Ekalavya availability policy. deepseek/minimax PAYG"
 echo "routes remain disabled for ordinary delegation regardless of this"
 echo "benchmark's outcome -- see docs/PAYG_DELEGATES.md."

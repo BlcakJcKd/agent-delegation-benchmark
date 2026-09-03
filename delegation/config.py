@@ -1,16 +1,16 @@
-"""User-owned delegation availability configuration.
+"""User-owned Ekalavya availability configuration.
 
 Persisted as TOML at ``delegation.paths.config_path()`` (XDG config dir). This
 file describes AVAILABILITY POLICY only -- which providers/routes are
 eligible in principle, including named local vLLM routes. It must never contain credentials, tokens, or
-provider secrets, and it cannot redefine what a pinned route (e.g. "flash")
+provider secrets, and it cannot redefine what a pinned route (for example, ``flash``)
 resolves to at runtime; that pin lives in ``delegation.core.DELEGATES`` and
 is not configurable here. See docs/DELEGATE_CONFIGURATION.md.
 
 This is user-owned persistent state. An AI primary agent may read, inspect,
-and respect it, but must not mutate it merely on its own judgement (e.g.
+and respect it, but must not mutate it merely on its own judgement (for example,
 "quota looks low") -- persistent mutation requires either explicit user
-instruction or the human directly invoking ``delegate-config``. A task-scoped
+instruction or an explicit human-directed Ekalavya configuration action. A task-scoped
 instruction such as "don't use Codex for this task" is a session constraint,
 not a reason to call ``set_enabled`` here.
 """
@@ -38,7 +38,7 @@ def _default_entry(name: str) -> dict[str, Any]:
     disabled with a standard reason -- both for a fresh install and when
     merging into an existing config that predates them, so a PAYG route
     never becomes eligible merely because a user's config file is older
-    than it. Enabling one is always an explicit `delegate-config` action.
+    than it. Enabling one is always an explicit Ekalavya configuration action.
     """
     if name in EXPERIMENTAL_PAYG_NAMES:
         return {"enabled": False, "reason": DEFAULT_DISABLED_REASON}
@@ -145,9 +145,9 @@ def load_config(path: Path | None = None) -> dict[str, dict[str, dict[str, Any]]
 
 def _render_toml(config: dict[str, dict[str, dict[str, Any]]]) -> str:
     lines = [
-        "# agent-delegation user configuration",
+        "# Ekalavya user configuration",
         "#",
-        "# Describes delegation AVAILABILITY POLICY only (which providers/routes",
+        "# Describes Ekalavya availability policy only (which providers/routes",
         "# are eligible in principle). It must never contain credentials, tokens,",
         "# or provider secrets. See docs/DELEGATE_CONFIGURATION.md.",
         "",
@@ -171,9 +171,12 @@ def save_config(config: dict[str, dict[str, dict[str, Any]]], path: Path | None 
     """Atomically write the config: render to a temp file, then rename in place."""
     target = path or config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(target.parent, 0o700)
     tmp = target.with_name(f"{target.name}.tmp-{os.getpid()}")
     tmp.write_text(_render_toml(config))
+    os.chmod(tmp, 0o600)
     tmp.replace(target)
+    os.chmod(target, 0o600)
     return target
 
 

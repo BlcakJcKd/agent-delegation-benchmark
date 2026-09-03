@@ -7,7 +7,7 @@ from pathlib import Path
 from delegation.core import run_consultation
 
 
-def execute(resolution: dict, prompt_file: Path, workspace: Path, *, primary: str | None = None) -> dict[str, object]:
+def execute(resolution: dict, prompt_file: Path, workspace: Path, *, primary: str | None = None, timeout_seconds: int | None = None) -> dict[str, object]:
     """Execute only a route named in the resolved catalogue entry.
 
     Ekalavya V1 does not invent a provider adapter. A catalogue entry may carry
@@ -21,7 +21,14 @@ def execute(resolution: dict, prompt_file: Path, workspace: Path, *, primary: st
     if not route:
         return {"state": "harness-unavailable", "reason": "resolved candidate has no configured execution adapter"}
     task = prompt_file.read_text(encoding="utf-8")
-    code, evidence = run_consultation(route, workspace, task, primary=primary, caller="ekalavya")
+    timeout = timeout_seconds or 300
+    if route.startswith("vllm:"):
+        from delegation.vllm import run_vllm_consultation
+        route_name = route.split(":", 1)[1]
+        outcome = run_vllm_consultation(route_name, workspace, task, timeout_seconds=timeout)
+        code, evidence = outcome.exit_code, outcome.record_dir
+    else:
+        code, evidence = run_consultation(route, workspace, task, timeout_seconds=timeout, primary=primary, caller="ekalavya")
     result: dict[str, object] = {"state": "completed" if code == 0 else "failed", "exit_code": code, "evidence": str(evidence), "retries": 0}
     metadata = evidence / "execution.json"
     if metadata.is_file():

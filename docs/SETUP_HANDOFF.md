@@ -20,7 +20,7 @@ environment by following the repository docs."
 
 - **Inspect before modifying.** Read what already exists at a target path
   (`$CODEX_HOME/*.config.toml`, `~/.local/bin/*`,
-  `~/.config/agent-delegation/config.toml`) before writing to it.
+  `~/.config/ekalavya/config.toml`) before writing to it.
   `scripts/setup-payg-providers.sh` already refuses to overwrite a
   conflicting file — respect that refusal, don't work around it by deleting
   or force-overwriting what's there. Ask the human instead.

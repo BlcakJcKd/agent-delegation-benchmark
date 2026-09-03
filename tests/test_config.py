@@ -122,6 +122,13 @@ class SaveConfigTests(unittest.TestCase):
             save_config(default_config(), path)
             self.assertTrue(path.is_file())
 
+    def test_save_keeps_user_configuration_private(self):
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            save_config(default_config(), path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+
     def test_save_is_atomic_no_leftover_temp_file(self):
         with TemporaryDirectory() as temp:
             path = Path(temp) / "config.toml"

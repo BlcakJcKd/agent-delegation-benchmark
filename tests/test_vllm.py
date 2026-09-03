@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import json
-import io
 import socket
 import urllib.error
-from contextlib import redirect_stdout
 from unittest.mock import MagicMock
 import unittest
 from pathlib import Path
@@ -14,7 +12,6 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from delegation import vllm
-from delegation.vllm_cli import main as vllm_main
 
 
 class RecordingTransport:
@@ -116,21 +113,6 @@ class VLLMConfigTests(VLLMTestBase):
         self.config.write_text(self.config.read_text().replace("max_tokens = 64", "max_tokens = 64\nmax_tokens_cap = 128"))
         with self.assertRaisesRegex(ValueError, "either legacy max_tokens"):
             vllm.load_vllm_config(self.config)
-
-    def test_cli_over_budget_is_exit_two_without_http_or_issue_record(self):
-        output = io.StringIO()
-        with patch.object(vllm.urllib.request, "urlopen", side_effect=AssertionError("network call")), redirect_stdout(output):
-            code = vllm_main([
-                "example", "--workspace", str(self.workspace), "--prompt", "task",
-                "--max-tokens", "65", "--config", str(self.config),
-                "--log-root", str(self.logs),
-            ])
-        self.assertEqual(code, 2)
-        self.assertIn("requested max_tokens=65 exceeds local route cap=64", output.getvalue())
-        self.assertIn("request rejected before model inference", output.getvalue())
-        self.assertFalse(self.logs.exists())
-        self.assertFalse(self.issues.exists())
-
 
 class VLLMTransportTests(VLLMTestBase):
     def test_http_transport_maps_connection_timeout_without_exposing_details(self):
@@ -329,53 +311,6 @@ class VLLMTransportTests(VLLMTestBase):
         self.assertIn("machine_label", record)
         self.assertNotIn("minimal task", json.dumps(record))
         self.assertNotIn("answer", json.dumps(record))
-
-
-class VLLMCLITests(unittest.TestCase):
-    def test_help_is_zero_model_and_describes_explicit_thinking_controls(self):
-        from io import StringIO
-        from contextlib import redirect_stdout
-
-        output = StringIO()
-        with redirect_stdout(output), self.assertRaises(SystemExit) as ctx:
-            vllm_main(["--help"])
-        self.assertEqual(ctx.exception.code, 0)
-        self.assertIn("--thinking", output.getvalue())
-        self.assertIn("--no-thinking", output.getvalue())
-        self.assertNotIn("--lock-path", output.getvalue())
-        self.assertNotIn("--issue-log", output.getvalue())
-
-    def test_cli_replays_text_on_stdout_and_diagnostics_on_stderr(self):
-        from io import StringIO
-        from contextlib import redirect_stderr, redirect_stdout
-
-        with TemporaryDirectory() as temp:
-            record_dir = Path(temp)
-            (record_dir / "stdout.txt").write_text("text result")
-            (record_dir / "stderr.txt").write_text("diagnostic\n")
-            out, err = StringIO(), StringIO()
-            with patch("delegation.vllm_cli.run_vllm_consultation", return_value=(0, record_dir)):
-                with redirect_stdout(out), redirect_stderr(err):
-                    code = vllm_main(["example", "--workspace", temp, "--prompt", "task"])
-            self.assertEqual(code, 0)
-            self.assertEqual(out.getvalue(), "text result")
-            self.assertIn("diagnostic", err.getvalue())
-            self.assertNotIn("text result", err.getvalue())
-
-    def test_cli_never_emits_text_marked_unretained(self):
-        from contextlib import redirect_stderr
-        from io import StringIO
-
-        with TemporaryDirectory() as temp:
-            record_dir = Path(temp)
-            out, err = StringIO(), StringIO()
-            outcome = vllm.VLLMRunResult(0, record_dir, "unretained", "", False)
-            with patch("delegation.vllm_cli.run_vllm_consultation", return_value=outcome):
-                with redirect_stdout(out), redirect_stderr(err):
-                    code = vllm_main(["example", "--workspace", temp, "--prompt", "task"])
-            self.assertEqual(code, 3)
-            self.assertEqual(out.getvalue(), "")
-            self.assertIn("no textual consultation", err.getvalue())
 
 
 if __name__ == "__main__":

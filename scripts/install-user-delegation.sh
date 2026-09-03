@@ -5,9 +5,7 @@
 #   1. no-model checks: the test suite and the no-model delegation preflight
 #   2. `pipx install --force` the `ekalavya` package from this checkout,
 #      providing the repo-independent `ekalavya` and `eka` control-plane
-#      commands (pipx builds and copies the package into its own venv). Legacy
-#      compatibility shims are packaged but are not printed as agent-facing
-#      commands here.
+#      commands (pipx builds and copies the package into its own venv).
 #   3. create an initial XDG config.toml only if one does not already exist
 #   4. install the delegation skill to ~/.agents/skills/delegation/SKILL.md
 #      (a copy, not a symlink into this repo -- see docs/USER_INSTALLATION.md
@@ -23,9 +21,8 @@
 #   scripts/install-user-delegation.sh --uninstall # remove the runtime
 #
 # Uninstall removes the pipx install and the skill files it created. It does
-# NOT delete your config (~/.config/agent-delegation/) or logs
-# (~/.local/state/agent-delegation/) -- remove those yourself if you want a
-# full wipe.
+# NOT delete your config (~/.config/ekalavya/) or logs
+# (~/.local/state/ekalavya/) -- remove those yourself if you want a full wipe.
 
 set -euo pipefail
 
@@ -34,9 +31,9 @@ PACKAGE_NAME="ekalavya-delegation"
 
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-CONFIG_DIR="$XDG_CONFIG_HOME/agent-delegation"
+CONFIG_DIR="$XDG_CONFIG_HOME/ekalavya"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
-STATE_LOG_DIR="$XDG_STATE_HOME/agent-delegation/delegate_runs"
+STATE_LOG_DIR="$XDG_STATE_HOME/ekalavya/delegate_runs"
 
 AGENTS_SKILL_DIR="$HOME/.agents/skills/delegation"
 AGENTS_SKILL_FILE="$AGENTS_SKILL_DIR/SKILL.md"
@@ -80,6 +77,26 @@ if ! command -v pipx >/dev/null 2>&1; then
   exit 1
 fi
 pipx install --force "$REPO_ROOT"
+
+# pipx can leave dangling app links when a package drops console scripts.
+# Remove only links whose target is this package's venv, preserving unrelated
+# commands and the two canonical links installed by the current package.
+PIPX_HOME_DIR="$(pipx environment --value PIPX_HOME)"
+PIPX_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR)"
+PIPX_VENV_DIR="$PIPX_HOME_DIR/venvs/$PACKAGE_NAME"
+if [ -d "$PIPX_BIN_DIR" ]; then
+  for app_link in "$PIPX_BIN_DIR"/*; do
+    [ -L "$app_link" ] || continue
+    app_name="$(basename "$app_link")"
+    case "$app_name" in
+      eka|ekalavya) continue ;;
+    esac
+    if [ "$(readlink "$app_link" 2>/dev/null || true)" = "$PIPX_VENV_DIR/bin/$app_name" ]; then
+      rm "$app_link"
+      echo "Removed stale Ekalavya app link: $app_link"
+    fi
+  done
+fi
 
 echo
 echo "== shorthand collision check =="

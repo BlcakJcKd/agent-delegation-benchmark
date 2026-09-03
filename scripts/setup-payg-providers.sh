@@ -146,6 +146,6 @@ Not installed here (machine-local, out of scope for this script):
 
 Next: validate with zero model calls --
   python -m delegation.preflight
-  delegate-status --primary claude-code
+  eka status --primary claude-code
   bwrap --unshare-net --dev /dev --ro-bind / / /bin/true   # sandbox capability check
 EOF

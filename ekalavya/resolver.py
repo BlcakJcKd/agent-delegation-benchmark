@@ -46,4 +46,5 @@ def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[st
     if intent.harness and intent.harness not in supported_harnesses:
         return Resolution(intent, None, reason=f"unsupported harness {intent.harness!r}; supported: {list(supported_harnesses)!r}", state="invalid-harness", alternatives=alternatives)
     candidate = CandidateIdentity(**{k: chosen.get(k) for k in CandidateIdentity.__dataclass_fields__})
-    return Resolution(intent, candidate, reasoning, intent.harness or profile.get("harness") or chosen.get("harness") or chosen.get("serving_engine") or chosen.get("transport"), chosen.get("harness_version") or chosen.get("serving_engine_version"), chosen.get("transport"), chosen.get("legacy_route"), "configured profile default" if default_key else "explicit sole candidate", "resolved", alternatives)
+    route = chosen.get("execution_route") or chosen.get("route") or chosen.get("legacy_route")
+    return Resolution(intent, candidate, reasoning, intent.harness or profile.get("harness") or chosen.get("harness") or chosen.get("serving_engine") or chosen.get("transport"), chosen.get("harness_version") or chosen.get("serving_engine_version"), chosen.get("transport"), route, "configured profile default" if default_key else "explicit sole candidate", "resolved", alternatives)

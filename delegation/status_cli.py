@@ -1,4 +1,4 @@
-"""CLI for delegate-status: a zero-model-call view of the effective delegation landscape.
+"""Status-report helpers for the Ekalavya control plane.
 
 Never invokes a delegate CLI and never queries quota; quota availability is
 user-managed (see docs/DELEGATE_CONFIGURATION.md).
@@ -152,21 +152,3 @@ def _print_human(report: dict[str, Any]) -> None:
             if live.get("reason"):
                 values.append(f"reason: {live['reason']}")
             print(f"  {name}: " + ", ".join(values))
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
-    try:
-        report = build_report(args.primary, live=args.live)
-    except ValueError as exc:
-        print(f"delegate-status error: {exc}")
-        return 2
-    if args.json:
-        print(jsonlib.dumps(report, indent=2, sort_keys=True))
-    else:
-        _print_human(report)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

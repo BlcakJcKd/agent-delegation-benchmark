@@ -195,7 +195,7 @@ def _check_self_provider_guard(delegate_name: str, primary: str | None) -> str |
     if routing.ROUTE_PROVIDER.get(delegate_name) == normalized:
         raise ValueError(
             f"same-provider external delegation disabled: primary={normalized!r} cannot "
-            f"externally invoke its own provider via ask-{delegate_name}; use a native "
+            f"externally invoke its own provider via Ekalavya; use a native "
             "agent/subagent capability instead"
         )
     return normalized

@@ -53,10 +53,9 @@ eka run <profile> --workspace DIR --prompt-file FILE --primary codex
 eka config
 ```
 
-`eka` is an optional shorthand created by the user-level installer only when
-it is absent or already points to Ekalavya. An unrelated executable is never
-overwritten. Older command-line entry points remain installed as compatibility
-interfaces for existing scripts; they are not the agent-facing contract.
+`eka` is the supported shorthand installed alongside `ekalavya`. An unrelated
+executable is never overwritten. Pre-cutover delegation entry points have
+been removed from the Ekalavya installation surface.
 
 `status`, `models`, `profiles`, `history`, and `spend` are read-only. The
 explicit `models refresh` path accepts provider discovery data and records new

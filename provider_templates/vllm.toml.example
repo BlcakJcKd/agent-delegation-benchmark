@@ -1,4 +1,4 @@
-# Machine-local only: copy this to $XDG_CONFIG_HOME/agent-delegation/vllm.toml.
+# Machine-local only: copy this to $XDG_CONFIG_HOME/ekalavya/vllm.toml.
 # Never commit a copy containing a private hostname, token, or institution
 # details. This generic example intentionally points at example.invalid.
 

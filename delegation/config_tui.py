@@ -1,4 +1,4 @@
-"""Interactive terminal checkbox screen for ``delegate-config`` (no subcommand).
+"""Interactive terminal helpers for Ekalavya availability configuration.
 
 Split deliberately in two layers:
 
@@ -237,14 +237,14 @@ def run_interactive_config() -> int:
     rows = build_rows(config, inspect_vllm_routes())
     result = curses.wrapper(_loop, rows)
     if result is None:
-        print("delegate-config: cancelled, no changes made")
+        print("eka config: cancelled, no changes made")
         return 0
     changes = diff_summary(config, result)
     if not changes:
-        print("delegate-config: no changes made")
+        print("eka config: no changes made")
         return 0
     save_config(rows_to_config(config, result))
-    print("delegate-config: saved")
+    print("eka config: saved")
     for line in changes:
         print(f"  {line}")
     return 0

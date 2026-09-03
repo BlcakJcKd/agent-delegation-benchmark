@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import subprocess
+import tomllib
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from delegation.cli import main
 from delegation.config import load_config
 from delegation.core import DELEGATES, build_argv, run_consultation
 
@@ -89,22 +87,6 @@ class CodexRouteGuardAndContractTests(unittest.TestCase):
                     )
             self.assertEqual(calls, [])
 
-    def test_fixed_console_routes_replay_text_on_stdout_and_diagnostics_on_stderr(self):
-        with TemporaryDirectory() as temp:
-            record = Path(temp) / "record"
-            record.mkdir()
-            (record / "stdout.txt").write_text("findings from Codex\n")
-            (record / "stderr.txt").write_text("diagnostic metadata\n")
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-            with patch("delegation.cli.run_consultation", return_value=(0, record)), \
-                 contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                returned = main(["--workspace", str(record), "--prompt", "task"], fixed_delegate="terra")
-            self.assertEqual(returned, 0)
-            self.assertEqual(stdout.getvalue(), "findings from Codex\n")
-            self.assertIn("diagnostic metadata", stderr.getvalue())
-            self.assertIn("Evidence: ", stderr.getvalue())
-
     def test_empty_response_and_timeout_semantics_are_unchanged(self):
         with TemporaryDirectory() as temp:
             root = Path(temp)
@@ -112,11 +94,6 @@ class CodexRouteGuardAndContractTests(unittest.TestCase):
             record.mkdir()
             (record / "stdout.txt").write_text(" \n")
             (record / "stderr.txt").write_text("")
-            with patch("delegation.cli.run_consultation", return_value=(0, record)), \
-                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as _:
-                returned = main(["--workspace", str(record), "--prompt", "task"], fixed_delegate="luna")
-            self.assertEqual(returned, 3)
-
             workspace = _scope(root)
             def timeout_run(argv, **kwargs):
                 raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output="partial", stderr="quiet")
@@ -147,15 +124,13 @@ class CodexRouteInstallAndMigrationTests(unittest.TestCase):
             self.assertEqual(config["models"]["luna"], {"enabled": True})
             self.assertNotIn("api_key", path.read_text())
 
-    def test_packaging_and_installer_expose_both_stable_commands(self):
+    def test_packaging_exposes_only_the_canonical_control_plane(self):
         root = Path(__file__).resolve().parents[1]
-        pyproject = (root / "pyproject.toml").read_text()
+        metadata = tomllib.loads((root / "pyproject.toml").read_text())
         installer = (root / "scripts" / "install-user-delegation.sh").read_text()
-        for command in ("ask-terra", "ask-luna"):
-            self.assertIn(command, pyproject)
-            self.assertTrue((root / "bin" / command).is_file())
-        self.assertIn("compatibility", installer)
+        self.assertEqual(set(metadata["project"]["scripts"]), {"eka", "ekalavya"})
         self.assertIn("Canonical commands:", installer)
+        self.assertNotIn("agent-delegation", installer)
 
 
 if __name__ == "__main__":

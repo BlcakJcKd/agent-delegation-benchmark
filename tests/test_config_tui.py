@@ -1,4 +1,4 @@
-"""Tests for the pure state-transition functions behind the delegate-config TUI.
+"""Tests for the pure state-transition functions behind Ekalavya config UI.
 
 The curses event loop itself is not exercised here -- driving a real
 terminal in a test is impractical and unnecessary; every requirement the

@@ -1,4 +1,4 @@
-"""Shared route/provider tables for the self-provider guard and delegate-status.
+"""Shared route/provider tables for Ekalavya routing and status.
 
 A "route" is a named consultation target (terra, luna, sonnet, haiku, flash,
 deepseek-pro, deepseek-flash, minimax-m3). Each route belongs to exactly one
@@ -8,7 +8,7 @@ actually executes the call. sonnet/haiku both use the ``claude`` transport
 to reach the ``claude`` provider; deepseek-pro/deepseek-flash/minimax-m3 use
 the ``codex`` transport (a pinned Codex provider-profile launcher) to reach
 the ``deepseek``/``minimax`` providers, which are unrelated to Codex's own
-OpenAI inference. The self-provider guard and ``delegate-status`` always key
+OpenAI inference. The self-provider guard and Ekalavya status always key
 off the provider, never the transport/executable name -- so a Codex-hosted
 primary calling a DeepSeek or MiniMax route is a distinct, allowed provider,
 while a real OpenAI-Codex-to-Codex or Claude-to-Claude call is rejected.
@@ -22,7 +22,7 @@ without allowing a Codex primary to recursively launch another Codex CLI.
 
 This module does not enforce anything by itself; it is a small, dependency-
 free lookup table shared by ``delegation.core`` (the self-provider guard) and
-``delegation.status`` (the read-only ``delegate-status`` computation), so the
+the Ekalavya status computation, so the
 two can never quietly disagree about what a route or a primary alias means.
 """
 
@@ -120,7 +120,7 @@ ROUTE_MATURITY: dict[str, str] = {
 # Provider/route names that are experimental PAYG capacity and must default
 # to disabled on both a fresh install and when merging into an existing
 # config that predates them (see delegation.config). Enabling them is always
-# an explicit, user-owned action via `delegate-config`.
+# an explicit, user-owned Ekalavya configuration action.
 EXPERIMENTAL_PAYG_NAMES: frozenset[str] = frozenset({
     "deepseek", "minimax", "deepseek-pro", "deepseek-flash", "minimax-m3",
 })
