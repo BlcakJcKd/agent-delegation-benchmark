@@ -71,7 +71,7 @@ class PublicCharacterizationV23Tests(unittest.TestCase):
         source = inspect.getsource(pilot)
         self.assertIn('"comparative_authorized": False', source)
         self.assertNotIn("eval_gate", source)
-        self.assertNotIn("for model, reasoning in COMPARISON_CONFIGURATIONS", source)
+        self.assertNotIn("_attempt(eval_instance", source)
 
     def test_gold_accessibility_has_no_tracked_repair_material(self):
         result = audit_tracked_gold_accessibility(Path(__file__).resolve().parents[1])
