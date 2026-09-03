@@ -12,7 +12,7 @@
 # What this does NOT do:
 #   - install/authenticate normal OpenAI Codex or normal Anthropic Claude;
 #   - install Codex CLI, Claude Code, or pipx (see docs/NEW_MACHINE_SETUP.md);
-#   - install the agent-delegation-benchmark runtime itself
+#   - install the Ekalavya runtime itself
 #     (scripts/install-user-delegation.sh does that, separately);
 #   - use sudo, or silently overwrite a conflicting existing provider config.
 #
@@ -141,7 +141,7 @@ Installed (non-secret):
 Not installed here (machine-local, out of scope for this script):
   - the API keys themselves (store via 'secret-tool store' above if missing)
   - normal Codex/Claude authentication
-  - the agent-delegation-benchmark runtime (run
+  - the Ekalavya runtime (run
     scripts/install-user-delegation.sh from this repo for that)
 
 Next: validate with zero model calls --

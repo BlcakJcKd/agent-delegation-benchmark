@@ -6,7 +6,7 @@ repository — and what stays true after you do.
 ## Architecture
 
 ```
-agent-delegation-benchmark repository        (source / development / evidence)
+ekalavya-delegation repository               (source / development / evidence)
     |
     | scripts/install-user-delegation.sh
     |
@@ -39,7 +39,7 @@ installation finishes.
 ## Install
 
 ```bash
-cd ~/Desktop/Side_Projects/agent-delegation-benchmark   # or wherever you cloned it
+cd ~/Desktop/Side_Projects/ekalavya-delegation   # or wherever you cloned it
 scripts/install-user-delegation.sh
 ```
 

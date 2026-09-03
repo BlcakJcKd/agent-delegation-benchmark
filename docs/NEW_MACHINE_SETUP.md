@@ -48,7 +48,7 @@ Open a new shell afterward so `~/.local/bin` is on `PATH`.
 
 ```bash
 git clone <this repository's URL>
-cd agent-delegation-benchmark
+cd ekalavya-delegation
 scripts/install-user-delegation.sh
 ```
 

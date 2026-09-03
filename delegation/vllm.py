@@ -914,7 +914,7 @@ def run_vllm_consultation(
             "adapter": "openai-compatible-vllm",
             "route": route,
             "provider_type": "openai_compatible_vllm",
-            "client_version": "agent-delegation-benchmark",
+            "client_version": "ekalavya-delegation",
             "model": provider.model,
             "operation_class": "bounded-chat-completion",
             "result_state": result_state,

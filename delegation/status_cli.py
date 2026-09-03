@@ -19,7 +19,7 @@ from .paths import config_path, log_root
 from .status import compute_status
 from .vllm import inspect_vllm_live_routes, inspect_vllm_routes, vllm_config_path
 
-DIST_NAME = "agent-delegation-benchmark"
+DIST_NAME = "ekalavya-delegation"
 
 
 def _runtime_version() -> str:
