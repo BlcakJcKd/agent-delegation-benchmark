@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -90,8 +91,16 @@ def _p3(workspace: Path, instance: TaskInstance) -> list[dict[str, Any]]:
     from pipeline.core import load_rows, split_by_group, summarize
     from pipeline.metrics import ordered
     rows = load_rows(str(workspace / "data/measurements.csv"))
-    train1, eval1 = split_by_group(rows, 0.5)
-    train2, eval2 = split_by_group(rows, 0.5)
+    # The fixture deliberately contains a global-randomness defect.  The
+    # evaluator itself must remain deterministic while measuring that defect.
+    random_state = random.getstate()
+    try:
+        random.seed(instance.seed)
+        train1, eval1 = split_by_group(rows, 0.5)
+        random.seed(instance.seed)
+        train2, eval2 = split_by_group(rows, 0.5)
+    finally:
+        random.setstate(random_state)
     train_groups, eval_groups = {r["group"] for r in train1}, {r["group"] for r in eval1}
     ordered_rows = ordered(rows)
     expected = [("A", "2024-01-01"), ("A", "2024-01-02"), ("B", "2024-01-01"), ("B", "2024-01-02")]
