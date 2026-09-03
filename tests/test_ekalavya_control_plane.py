@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ekalavya.catalogue import add_candidate, promote, selectable
 from ekalavya.config import ensure_control_files, migrate_legacy_config
-from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_benchmark_suite_correction, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, upsert_model
+from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_benchmark_suite_correction, record_benchmark_task, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, record_task_attempt, upsert_model
 from ekalavya.resolver import resolve
 from ekalavya.schema import CandidateIdentity, RunIntent
 
@@ -85,6 +85,18 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
             record_cost(conn, "run", billing_mode="subscription", cost_source="unavailable")
             row = conn.execute("SELECT provider_reported_cost,api_equivalent_cost FROM cost_observations WHERE run_id='run'").fetchone()
             self.assertIsNone(row[0]); self.assertIsNone(row[1])
+
+    def test_benchmark_metadata_columns_are_additive_and_nullable(self):
+        with tempfile.TemporaryDirectory() as d:
+            conn = connect(Path(d) / "ledger.sqlite3")
+            suite_id = record_benchmark_suite(conn, "public", "public", "1", evaluation_class="public_characterization")
+            task_id = record_benchmark_task(conn, suite_id, family="P1", task_id="p1", variant_seed="1", content_hash="c", prompt_hash="p", evaluator_hash="e", baseline_score=25.0, baseline_check_vector=[False, True], task_spec_hash="t", allowed_edit_manifest_hash="a", reference_validation_passed=True, reference_validation_at="now")
+            record_run(conn, "run", {"profile": "flash"})
+            attempt_id = record_task_attempt(conn, "run", task_id, score=75.0, baseline_score=25.0, baseline_check_vector=[False, True], final_check_vector=[True, True], delta_score=50.0, normalized_improvement=2/3, evaluator_tampering=False, prohibited_changed_files=[])
+            task = conn.execute("SELECT baseline_score,baseline_check_vector_json,task_spec_hash,reference_validation_passed FROM benchmark_tasks WHERE id=?", (task_id,)).fetchone()
+            attempt = conn.execute("SELECT baseline_score,final_check_vector_json,delta_score,evaluator_tampering FROM task_attempts WHERE id=?", (attempt_id,)).fetchone()
+            self.assertEqual(tuple(task), (25.0, "[false, true]", "t", 1))
+            self.assertEqual(tuple(attempt), (25.0, "[true, true]", 50.0, 0))
 
     def test_evaluation_classes_are_explicit_and_historical_defaults_are_unknown(self):
         with tempfile.TemporaryDirectory() as d:
