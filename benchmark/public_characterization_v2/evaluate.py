@@ -100,12 +100,14 @@ def _p3(root: Path, instance: Any) -> list[dict[str, Any]]:
         random.setstate(random_state)
     expected = [("A", "2024-01-01"), ("A", "2024-01-02"), ("A", "2024-01-03"), ("B", "2024-01-01"), ("B", "2024-01-02"), ("B", "2024-01-03")]
     groups = {row["group"] for row in train1}, {row["group"] for row in eval1}
+    original_indexes = {id(row): index for index, row in enumerate(rows)}
+    preserves_partition_order = all([original_indexes[id(row)] for row in part] == sorted(original_indexes[id(row)] for row in part) for part in (train1, eval1))
     return [
         _check("all rows retained", len(rows) == 6 and len(train1) + len(eval1) == 6),
         _check("chronological ordering", [(row["group"], row["timestamp"]) for row in ordered(rows)] == expected),
         _check("group-disjoint split", groups[0].isdisjoint(groups[1]) and groups[0] | groups[1] == {"A", "B"}),
         _check("deterministic split", train1 == train2 and eval1 == eval2),
-        _check("no global shuffle", [(row["group"], row["timestamp"]) for row in rows] == expected),
+        _check("no global shuffle", preserves_partition_order),
         _check("numeric preservation", sum(float(row["value"]) for row in rows) == 42.0),
         _check("summary", summarize(rows)["count"] == 6 and summarize(rows)["mean"] == 7.0),
         _check("report schema", report(rows)["rows"] == rows),
