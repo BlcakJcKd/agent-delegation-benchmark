@@ -1,201 +1,94 @@
-# Agent delegation benchmark
+# Ekalavya
 
-A small, synthetic, frozen-fixture benchmark for comparing Codex CLI, Claude Code, and
-Antigravity CLI (`agy`). All existing `first-*` runs are **PILOT / HARNESS VALIDATION** evidence,
-not controlled model-tier evidence; see [RUN_HISTORY.md](RUN_HISTORY.md).
+Ekalavya is a stable delegation/control-plane abstraction for primary agents.
+It separates command intent, capability profiles, model identities, explicit
+resolution, execution adapters, evidence, and a private historical ledger.
+The repository also contains the Ekalavya Benchmark subsystem; benchmarking
+is not the product identity.
 
-The canonical methodology, incident record, frozen results, clean-machine
-procedure, and future-model protocol are in
-[docs/AGENT_BENCHMARK_HANDBOOK.md](docs/AGENT_BENCHMARK_HANDBOOK.md). The new
-operational delegation layer is separate from immutable historical `runs/`; its
-read-only consultation policy and wrappers are in
-[docs/DELEGATION_POLICY.md](docs/DELEGATION_POLICY.md).
+The primary agent owns routing. A profile default is an explicit choice when
+the primary invokes it, not hidden autonomous provider selection. Ekalavya
+does not silently fail over. Codex/OpenAI work uses native Codex agents for
+same-provider Terra/Luna, Claude uses native Claude subagents for Sonnet/Haiku,
+and Gemini uses native Gemini facilities. A same-provider external resolution
+returns `same-provider-native-required` so the primary can decide what to do.
 
-## Delegation as a user-level tool
+Profiles represent capabilities such as `coder`, `reviewer`, or
+`researcher`; candidates preserve provider, family, exact provider model ID,
+reasoning, harness, transport, and (when known) local serving metadata.
+The live catalogue intentionally stays small: current, previous supported
+fallback, and explicit new candidates. Discovery marks candidates; it never
+promotes a newer model automatically, and retired models remain in history.
 
-This repository is also the source for an installable, cross-project
-delegation runtime: `ask-terra`/`ask-luna`/`ask-flash`/`ask-haiku`/`ask-sonnet`
-for read-only consultation, `delegate-status` for a zero-model-call view of what's
-currently eligible, and `delegate-config` to persistently enable/disable
-providers or routes. Once installed (`scripts/install-user-delegation.sh`),
-none of this depends on this checkout still existing — see
-[docs/USER_INSTALLATION.md](docs/USER_INSTALLATION.md) for the install
-procedure and architecture, and
-[docs/DELEGATE_CONFIGURATION.md](docs/DELEGATE_CONFIGURATION.md) for the
-config schema and ownership rules. Claude-Code-specific orchestration
-guidance is in
-[docs/CLAUDE_CODE_ORCHESTRATION.md](docs/CLAUDE_CODE_ORCHESTRATION.md), and
-a short entry point for any other agent is
-[docs/LLM_HANDOFF.md](docs/LLM_HANDOFF.md). If you're testing that the
-installed runtime is truly independent of this checkout, see
-[docs/USER_INSTALLATION.md](docs/USER_INSTALLATION.md#testing-portability-safely-and-a-hazard-to-avoid)
-first — a naive test method can lock an agent out of its own working
-directory.
-
-Generic shared OpenAI-compatible/vLLM consultation is available through the
-machine-local `ask-vllm <named-route>` command. It is direct, bounded,
-non-thinking by default, single-concurrency, and never an automatic fallback;
-see [docs/VLLM_DELEGATES.md](docs/VLLM_DELEGATES.md).
-
-`ask-terra` and `ask-luna` are external OpenAI/Codex routes for non-Codex
-primaries and use the normal Codex subscription authentication. A Codex
-primary uses native Codex agents for Terra/Luna; similarly, Claude Code uses
-native Claude subagents for Sonnet/Haiku rather than `ask-sonnet`/`ask-haiku`.
-
-`ask-deepseek-pro`/`ask-deepseek-flash`/`ask-minimax-m3` add three
-experimental, pay-as-you-go (PAYG) routes on top of the same runtime,
-disabled by default on every install — see
-[docs/PAYG_DELEGATES.md](docs/PAYG_DELEGATES.md) for the provider/transport
-distinction, credential handling, and how to opt in. A completed objective
-+ blind-review crossover benchmark for these three routes is in
-[docs/PAYG_BENCHMARK_2026-08.md](docs/PAYG_BENCHMARK_2026-08.md); the
-evidence-guided (but still opt-in, still disabled-by-default) routing
-guidance it informs is in
-[docs/DELEGATION_POLICY.md](docs/DELEGATION_POLICY.md).
-
-## Setting this up on a new machine
-
-Cloning this repository plus [docs/NEW_MACHINE_SETUP.md](docs/NEW_MACHINE_SETUP.md)
-is enough for a fresh Codex or Claude Code session to reproduce the whole
-non-secret setup — install the delegation runtime, optionally bootstrap the
-DeepSeek/MiniMax PAYG providers from the templates in `provider_templates/`,
-and validate everything with zero model calls — asking you only for
-genuinely machine-local secrets (API keys, CLI logins) along the way. Point
-a fresh agent at [docs/SETUP_HANDOFF.md](docs/SETUP_HANDOFF.md) first; it's
-the short entry point that tells it where to read next and what not to do.
-
-## Method
-
-Each of the six tasks has a fixed prompt in `tasks/prompts/` and starting files in `fixtures/`.
-Their SHA-256 hashes are committed in `fixtures.lock.json`. The runner refuses to prepare a run
-if this lock does not match, so prompts and starting files are frozen before contestants run.
-
-For a run label, the runner copies each fixture independently to
-`runs/<label>/<task>/<agent>/workspace/`, writes the same frozen task prompt into each workspace,
-then starts each CLI with that workspace as its process working directory. It records the exact
-command, wall-clock duration, exit/timeout status, raw stdout/stderr, changed files, any
-JSON usage-like fields exposed by that CLI, and an automated evaluation. It does not edit a
-contestant workspace after the CLI returns.
-
-The selected tasks are intentionally small. Controlled results use named **matched practical
-operating tiers**, not identical-compute configurations: provider model families, effort controls,
-system prompts, tools, and internal compute differ.
-
-| ID | Exercise | Primary evaluation |
-|---|---|---|
-| `research_python` | synthetic Python data analysis | exact JSON values |
-| `diagnostic_plot` | matplotlib QC diagnostic | PNG + outlier JSON |
-| `debug_package` | four seeded package defects | clean `unittest` run |
-| `repository_review` | read-only seeded-issue review | hidden keyword manifest + edit check |
-| `pandoc_pdf` | Markdown-to-Pandoc PDF | valid PDF signature |
-| `scientific_writing` | Results/Discussion from numbers | evidence/rubric checks + blind review |
-
-The seeded issue manifests live in `private_admin/manifests/`; they are not copied into
-contestant workspaces. Never share `private_admin/` or `blind_map.json` with human evaluators.
-Blind human-review files are copied to `runs/<label>/blind/` under opaque submission identifiers;
-the private mapping remains in `blind_map.json`.
-
-## Layout
-
-```
-benchmark/                 runner, adapters, fixture lock and evaluators
-fixtures/                  public, identical starting material
-tasks/prompts/             public, identical frozen prompts
-private_admin/manifests/   administrator-only seeded issue ground truth
-tests/                     harness tests only
-runs/                      generated, ignored comparison workspaces and evidence
-```
+The private ledger at `~/.local/state/ekalavya/ledger.sqlite3` records
+requested intent separately from resolved execution, benchmark/task/evaluator
+hashes, request and tool telemetry, resource observations, pricing snapshots,
+promotion/retirement decisions, and references to private raw evidence. API
+cost, calculated cost, subscription cost, and local resource usage are kept
+separate; unavailable spend is represented as `null`, never guessed.
 
 ## Commands
+
+```text
+ekalavya run <profile> [--provider P --family F --model ID --reasoning R
+                        --harness H --workspace DIR --prompt-file FILE]
+ekalavya status [--json]       # network-free overview
+ekalavya config migrate        # additive, reversible legacy migration
+ekalavya models                # catalogue only; no provider discovery
+ekalavya models refresh --source FILE  # explicit, file-driven discovery
+ekalavya profiles
+ekalavya history [--json]
+ekalavya spend [--json]
+ekalavya bench                 # benchmark subsystem entry point
+ekalavya doctor [--json]
+```
+
+`eka` is an optional shorthand created by the user-level installer only when
+it is absent or already points to Ekalavya. An unrelated executable is never
+overwritten. Existing `ask-*`, `delegate-status`, `delegate-config`, and
+`ask-vllm` commands remain compatibility interfaces with their historical
+semantics.
+
+`status`, `models`, `profiles`, `history`, and `spend` are read-only. The
+explicit `models refresh` path accepts provider discovery data and records new
+entries as candidates; it does not download models, start servers, or alter a
+profile default. Persistent provider/model configuration remains user-owned.
+
+## Safety and evidence
+
+External compatibility wrappers retain closed stdin, scoped workspaces,
+symlink/parent-escape checks, recursion protection via
+`AGENT_DELEGATION_DEPTH`, process-group and timeout semantics, and atomic
+private response retention. Writable benchmark runs use disposable copies and
+hidden evaluators outside candidate workspaces. Private configuration,
+provider endpoints, credentials, raw traces, and machine-specific telemetry
+must stay outside Git.
+
+## Benchmark subsystem
+
+The existing frozen benchmark and Benchmark V2 remain operational under
+`benchmark/`. Run the no-model checks with:
 
 ```bash
 python -m unittest discover -s tests -q
 python -m benchmark.runner check
-python -m benchmark.runner list --verbose
 python -m benchmark.runner preflight --agents codex,claude,agy --tasks research_python
 ```
 
-No run can rely on a CLI default model. Supply a chosen, explicit model for every contestant, or
-use one of the fixed named tiers:
+Benchmark identity includes suite/version, benchmark Git SHA, task family and
+variant, content/prompt/evaluator hashes, candidate identity, harness, and
+reasoning. A small longitudinal core can remain stable while evolving suites
+such as Benchmark V2 provide fresh discrimination.
 
-| Tier | Codex | Claude | Antigravity |
-|---|---|---|---|
-| `tier-a-medium` | `gpt-5.6-terra`, effort `medium` | `claude-sonnet-5`, effort `medium` | `gemini-3.1-pro-low` |
-| `tier-b-cheap` | `gpt-5.6-luna`, effort `medium` | `claude-haiku-4-5-20251001`, effort `medium` | `gemini-3.7-flash-medium` |
+## Installation
 
-The selected Antigravity model variants encode their Low/Medium designations; the harness does
-not apply an additional undocumented effort override. Tier A addresses everyday medium-capability
-delegation; Tier B addresses cheap/high-throughput routine work. Do not compare scores across
-tiers as though they shared the same resource budget.
-
-The no-model preflight intentionally fails until those choices are supplied; it never contacts a
-model. After choosing a tier, inspect the exact argv templates first:
+The supported user-level installation remains self-contained via pipx:
 
 ```bash
-python -m benchmark.runner preflight \
-  --tier tier-a-medium --agents codex,claude,agy --tasks research_python
+scripts/install-user-delegation.sh
 ```
 
-Only after a passing preflight may a run start. `--timeout` defaults to 900 seconds per
-contestant/task. A reused run label is rejected, preserving the original evidence.
-
-### Machine-local command agents
-
-The benchmark also accepts generic, machine-local coding-agent commands
-through `$XDG_CONFIG_HOME/agent-delegation/benchmark.toml` (see
-`provider_templates/benchmark.toml.example`). Each entry provides a candidate
-name, an argv `command`, and optional fixed `args`; the runner appends the
-unchanged task prompt, uses the copied task workspace as `cwd`, and retains the
-same timeout, scoring, and stdout/stderr evidence as built-in adapters. This
-file is local configuration and must not be committed. No shell interpolation,
-credential field, provider fallback, or automatic retry is provided.
-
-This is a benchmark-only, copied-workspace mechanism, not a general
-write-capable `ask-*` delegation route. A user must explicitly select the
-local command agent and its workspace/sandbox scope; the primary owns review,
-tests, integration, and final correctness.
-
-## Adapters and safety
-
-The adapters reflect the locally inspected help for the installed versions:
-
-- Codex: `codex exec --sandbox workspace-write --cd <workspace> --json` plus an explicit
-  configured reasoning effort.
-  No approval override or dangerous bypass is used.
-- Claude: `claude --output-format json --safe-mode --permission-mode auto --model <model> -p
-  <prompt>`; its process current directory is the assigned workspace.
-- Antigravity: `agy --output-format json --mode accept-edits --sandbox --model <model> -p
-  <prompt>`. Its installed help offers no documented non-bypass autonomous mode beyond
-  `accept-edits` plus sandboxing.
-
-All configuration flags precede the final `-p <prompt>` for Antigravity. No permission-bypass or
-dangerous flags are used. A passing preflight checks CLI versions/help flags, explicit model
-configuration, fixtures, isolated-copy construction, private-material exclusion, required task
-dependencies, and redacted argv templates. A missing executable prevents every contestant from
-starting. Authentication failures are captured as individual non-zero CLI exits; the runner does
-not try to authenticate or silently substitute another model.
-
-Claude's `--worktree` is intentionally not used. The harness already builds a disposable copied
-workspace per contestant; `--worktree` requires/rearranges Git worktrees and would add another
-independent copy/isolation mechanism, complicating fixture equivalence without strengthening the
-documented filesystem boundary.
-
-## Fairness limits
-
-This harness equalises prompts, initial files, order within a task, process cwd, explicit requested
-models, and collection of evidence. It cannot make unlike products identical. Account entitlements,
-system prompts, tool availability, shell/environment configuration, and sandbox strength differ.
-Claude's displayed help has no documented equivalent to Codex's workspace sandbox; its CWD is an
-operational boundary rather than a cryptographic isolation boundary. `agy` may likewise have
-product-specific sandbox semantics, and its `accept-edits` mode may still request intervention for
-some local commands. Run on the same machine, with the same network policy and no unrelated
-background load; record CLI versions with the run.
-
-Usage figures are retained only as each CLI reports them. They are intentionally not normalized
-or presented as comparable token counts, because the CLIs may expose different definitions or no
-usage fields at all. Automated scores are deliberately narrow. Inspect blind plot and prose
-outputs separately, and treat all scores as decision support rather than a universal ranking.
-
-Run-level metadata records the named tier, requested model and effort configuration, and a
-separate observed model field when the CLI emits one. `benchmark.tiers.PILOT_RUN_LABELS` is the
-authoritative exclusion list for all controlled aggregate analysis.
+The installer does not require sudo, alter provider authentication, install a
+serving engine, or modify model/GPU settings. It copies the delegation skill
+instead of linking it into the checkout, so installed commands remain usable
+after the repository moves.

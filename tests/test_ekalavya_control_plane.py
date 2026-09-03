@@ -1,0 +1,80 @@
+import json
+import os
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from ekalavya.catalogue import add_candidate, promote, selectable
+from ekalavya.config import migrate_legacy_config
+from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_cost, record_price_snapshot, upsert_model
+from ekalavya.resolver import resolve
+from ekalavya.schema import CandidateIdentity, RunIntent
+
+
+class EkalavyaControlPlaneTests(unittest.TestCase):
+    def test_catalogue_current_previous_and_family_identity(self):
+        a = CandidateIdentity("google", "gemini", "gemini-3.7-flash", "Flash")
+        b = CandidateIdentity("google", "gemini", "gemini-3.8-flash", "Flash")
+        entries = add_candidate(add_candidate([], a), b)
+        entries = promote(entries, a.identity_key)
+        entries = promote(entries, b.identity_key)
+        states = {e["provider_model_id"]: e["lifecycle"] for e in entries}
+        self.assertEqual(states, {"gemini-3.7-flash": "previous", "gemini-3.8-flash": "current"})
+
+    def test_resolver_does_not_fail_over_and_enforces_native(self):
+        c1 = CandidateIdentity("gemini", "gemini", "flash", capabilities={"reasoning_values": ["low", "high"]})
+        c2 = CandidateIdentity("claude", "sonnet", "sonnet", capabilities={"reasoning_values": ["medium"]})
+        profile = {"default_identity_key": c1.identity_key, "permitted_candidates": [c1.identity_key, c2.identity_key], "reasoning_policy": "overrideable"}
+        native = resolve(RunIntent("coder", primary="gemini"), profile, [dict(c1.as_dict(), identity_key=c1.identity_key, lifecycle="current"), dict(c2.as_dict(), identity_key=c2.identity_key, lifecycle="current")])
+        self.assertEqual(native.state, "same-provider-native-required")
+        unavailable = resolve(RunIntent("coder", provider="claude"), profile, [dict(c1.as_dict(), identity_key=c1.identity_key, lifecycle="current"), dict(c2.as_dict(), identity_key=c2.identity_key, lifecycle="current")])
+        self.assertEqual(unavailable.state, "unavailable")
+        self.assertEqual(native.reason, "primary provider gemini must use its native agent capability")
+
+    def test_reasoning_is_rejected_before_resolution(self):
+        c = CandidateIdentity("local", "qwen", "qwen", capabilities={"reasoning_values": [False, True]})
+        entry = dict(c.as_dict(), identity_key=c.identity_key, lifecycle="current")
+        result = resolve(RunIntent("local-coder", reasoning="high"), {"default_identity_key": c.identity_key}, [entry])
+        self.assertEqual(result.state, "invalid-reasoning")
+
+    def test_ledger_schema_and_price_snapshot_immutability(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = Path(d) / "ledger.sqlite3"; conn = connect(db)
+            identity = CandidateIdentity("local", "qwen", "qwen3-coder:30b")
+            upsert_model(conn, identity)
+            sid = record_price_snapshot(conn, "x", "2026-09-03", {"input": 1}, currency="USD")
+            sid2 = record_price_snapshot(conn, "x", "2026-09-03", {"input": 1}, currency="USD")
+            self.assertEqual(sid, sid2); self.assertEqual(conn.execute("SELECT COUNT(*) FROM schema_versions").fetchone()[0], 1)
+            with self.assertRaises(ValueError): record_price_snapshot(conn, "x", "2026-09-03", {"input": 2}, currency="USD")
+            conn.execute("INSERT INTO runs(run_id,started_at,requested_json) VALUES('r','now','{}')")
+            record_cost(conn, "r", billing_mode="subscription", cost_source="unavailable")
+            row = conn.execute("SELECT provider_reported_cost,calculated_cost FROM cost_observations").fetchone()
+            self.assertIsNone(row[0]); self.assertIsNone(row[1])
+
+    def test_config_migration_preserves_source_and_permissions_idempotently(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); source = root / "old"; target = root / "new"; source.mkdir(mode=0o700); secret = source / "config.toml"; secret.write_text("[providers]\n"); os.chmod(secret, 0o600)
+            first = migrate_legacy_config(source, target); second = migrate_legacy_config(source, target)
+            self.assertEqual(len(first["copied"]), 1); self.assertEqual(len(second["copied"]), 0); self.assertTrue(secret.exists()); self.assertEqual((target / "config.toml").stat().st_mode & 0o777, 0o600)
+
+    def test_legacy_evidence_import_is_hash_idempotent_and_non_destructive(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "legacy"; root.mkdir(); source = root / "run.json"; source.write_text('{"provider":"local"}\n')
+            conn = connect(Path(d) / "ledger.sqlite3")
+            first = import_legacy_state(conn, root); second = import_legacy_state(conn, root)
+            self.assertEqual(first["files"], 1); self.assertEqual(first["records"], 1); self.assertEqual(second["files"], 0); self.assertTrue(source.exists())
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM imported_evidence").fetchone()[0], 1)
+
+    def test_execution_metadata_import_creates_a_safe_historical_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "legacy"; root.mkdir(); source = root / "execution.json"
+            source.write_text(json.dumps({"delegate": "flash", "provider": "gemini", "requested_model": "gemini-x", "started_at": "2026-01-01T00:00:00Z", "response_recorded": True, "secret": "must-not-be-copied"}))
+            conn = connect(Path(d) / "ledger.sqlite3"); import_legacy_state(conn, root)
+            row = conn.execute("SELECT profile,provider,requested_json FROM runs").fetchone()
+            self.assertEqual(row[0], "flash"); self.assertEqual(row[1], "gemini"); self.assertNotIn("must-not-be-copied", row[2])
+
+
+if __name__ == "__main__":
+    unittest.main()

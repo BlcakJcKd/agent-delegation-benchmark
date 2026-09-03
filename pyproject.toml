@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-delegation-benchmark"
-version = "0.2.0"
-description = "Small reproducible benchmark for CLI coding agents"
+name = "ekalavya-delegation"
+version = "0.3.0"
+description = "Ekalavya delegation control plane and benchmark subsystem"
 requires-python = ">=3.11"
 
 [project.scripts]
@@ -20,6 +20,7 @@ ask-minimax-m3 = "delegation.cli:ask_minimax_m3_main"
 ask-vllm = "delegation.vllm_cli:main"
 delegate-status = "delegation.status_cli:main"
 delegate-config = "delegation.config_cli:main"
+ekalavya = "ekalavya.cli:main"
 
 [tool.setuptools]
-packages = ["delegation"]
+packages = ["delegation", "ekalavya", "benchmark", "benchmark.v2"]

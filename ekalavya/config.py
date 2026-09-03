@@ -1,0 +1,46 @@
+"""Reversible legacy configuration migration and Ekalavya state paths."""
+
+from __future__ import annotations
+
+import os
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def config_root() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser() / "ekalavya"
+
+
+def legacy_root() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser() / "agent-delegation"
+
+
+def migrate_legacy_config(source: Path | None = None, target: Path | None = None) -> dict[str, object]:
+    source = source or legacy_root(); target = target or config_root()
+    report: dict[str, object] = {"source": str(source), "target": str(target), "copied": [], "skipped": [], "conflicts": []}
+    if not source.is_dir():
+        report["decision"] = "legacy config absent; created no replacement"
+        return report
+    if source.is_symlink() or target.is_symlink():
+        report["decision"] = "refused symlinked config root"
+        report["conflicts"] = ["symlinked-root"]
+        return report
+    target.mkdir(parents=True, exist_ok=True, mode=0o700); os.chmod(target, 0o700)
+    for item in sorted(source.rglob("*")):
+        rel = item.relative_to(source); dest = target / rel
+        if item.is_symlink():
+            report["skipped"].append(str(rel)); continue
+        if item.is_dir():
+            dest.mkdir(parents=True, exist_ok=True, mode=0o700); os.chmod(dest, 0o700); continue
+        if dest.exists():
+            if dest.read_bytes() == item.read_bytes(): report["skipped"].append(str(rel))
+            else: report["conflicts"].append(str(rel))
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        shutil.copy2(item, dest)
+        os.chmod(dest, item.stat().st_mode & 0o777)
+        report["copied"].append(str(rel))
+    report["decision"] = "copied without deleting legacy tree; rerunnable and conflict-preserving"
+    report["timestamp"] = datetime.now(timezone.utc).isoformat()
+    return report

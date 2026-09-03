@@ -3,7 +3,7 @@
 #
 # What this does, in order:
 #   1. no-model checks: the test suite and the no-model delegation preflight
-#   2. `pipx install --force` the `delegation` package from this checkout,
+#   2. `pipx install --force` the `ekalavya` package from this checkout,
 #      producing ask-flash / ask-haiku / ask-sonnet / ask-terra / ask-luna /
 #      ask-deepseek-pro /
 #      ask-deepseek-flash / ask-minimax-m3 (experimental PAYG, disabled by
@@ -33,7 +33,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_NAME="agent-delegation-benchmark"
+PACKAGE_NAME="ekalavya-delegation"
 
 XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -85,6 +85,22 @@ fi
 pipx install --force "$REPO_ROOT"
 
 echo
+echo "== shorthand collision check =="
+CANONICAL_BIN="$(command -v ekalavya || true)"
+if [ -n "${CANONICAL_BIN}" ]; then
+  BIN_DIR="$(dirname "${CANONICAL_BIN}")"
+  EXISTING_EKA="$(command -v eka || true)"
+  if [ -z "${EXISTING_EKA}" ]; then
+    ln -s "${CANONICAL_BIN}" "${BIN_DIR}/eka"
+    echo "Installed shorthand: ${BIN_DIR}/eka -> ${CANONICAL_BIN}"
+  elif [ "$(readlink -f "${EXISTING_EKA}" 2>/dev/null || true)" = "$(readlink -f "${CANONICAL_BIN}")" ]; then
+    echo "Shorthand already points to this Ekalavya installation: ${EXISTING_EKA}"
+  else
+    echo "Shorthand collision: eka already resolves to ${EXISTING_EKA}; left it untouched" >&2
+  fi
+fi
+
+echo
 echo "== 3/4: initial config =="
 if [ -f "$CONFIG_FILE" ]; then
   echo "Existing config found, left untouched: $CONFIG_FILE"
@@ -121,7 +137,7 @@ fi
 echo
 echo "== Done =="
 echo "Commands:"
-for cmd in ask-flash ask-haiku ask-sonnet ask-terra ask-luna ask-deepseek-pro ask-deepseek-flash ask-minimax-m3 ask-vllm delegate-status delegate-config; do
+for cmd in ekalavya eka ask-flash ask-haiku ask-sonnet ask-terra ask-luna ask-deepseek-pro ask-deepseek-flash ask-minimax-m3 ask-vllm delegate-status delegate-config; do
   path="$(command -v "$cmd" 2>/dev/null || echo "NOT ON PATH")"
   echo "  $cmd: $path"
 done

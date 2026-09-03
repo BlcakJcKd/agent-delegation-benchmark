@@ -1,0 +1,150 @@
+"""Private SQLite ledger and conservative legacy evidence importer."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+
+from . import SCHEMA_VERSION
+from .schema import CandidateIdentity
+
+
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS schema_versions(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, checksum TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS model_families(id INTEGER PRIMARY KEY, provider TEXT NOT NULL, family_key TEXT NOT NULL, lineage TEXT, display_name TEXT, UNIQUE(provider,family_key));
+CREATE TABLE IF NOT EXISTS models(id INTEGER PRIMARY KEY, identity_key TEXT NOT NULL UNIQUE, provider TEXT NOT NULL, family_id INTEGER REFERENCES model_families(id), family TEXT, provider_model_id TEXT, display_name TEXT, generation TEXT, variant TEXT, capabilities_json TEXT, architecture TEXT, parameter_count TEXT, active_parameter_count TEXT, quantization TEXT, serving_engine TEXT, serving_engine_version TEXT, hardware_profile TEXT, lifecycle TEXT NOT NULL DEFAULT 'candidate', discovered_at TEXT, retired_at TEXT);
+CREATE TABLE IF NOT EXISTS model_availability(id INTEGER PRIMARY KEY, model_id INTEGER NOT NULL REFERENCES models(id), state TEXT NOT NULL, observed_at TEXT NOT NULL, source TEXT, details_json TEXT);
+CREATE TABLE IF NOT EXISTS harnesses(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, adapter_version TEXT, transport TEXT, UNIQUE(name,version,adapter_version));
+CREATE TABLE IF NOT EXISTS serving_engines(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, UNIQUE(name,version));
+CREATE TABLE IF NOT EXISTS hardware_profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, details_json TEXT);
+CREATE TABLE IF NOT EXISTS profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, default_identity_key TEXT, permitted_candidates_json TEXT, required_capabilities_json TEXT, writable INTEGER, reasoning_policy TEXT, default_reasoning TEXT, enabled INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS benchmark_suites(id INTEGER PRIMARY KEY, name TEXT NOT NULL, layer TEXT NOT NULL, version TEXT NOT NULL, git_sha TEXT, metadata_json TEXT, UNIQUE(name,version,git_sha));
+CREATE TABLE IF NOT EXISTS benchmark_tasks(id INTEGER PRIMARY KEY, suite_id INTEGER REFERENCES benchmark_suites(id), family TEXT NOT NULL, task_id TEXT NOT NULL, variant_seed TEXT, content_hash TEXT, prompt_hash TEXT, evaluator_hash TEXT, UNIQUE(suite_id,task_id,variant_seed));
+CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT, profile TEXT, requested_json TEXT NOT NULL, resolved_json TEXT, resolution_reason TEXT, provider TEXT, identity_key TEXT, harness_id INTEGER, engine_id INTEGER, hardware_id INTEGER, billing_mode TEXT, raw_evidence_path TEXT, raw_evidence_sha256 TEXT, status TEXT);
+CREATE TABLE IF NOT EXISTS task_attempts(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), task_id INTEGER REFERENCES benchmark_tasks(id), score REAL, public_score REAL, hidden_score REAL, invariant_score REAL, api_score REAL, scope_compliant INTEGER, wall_seconds REAL, metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS request_metrics(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), ordinal INTEGER, started_at TEXT, ended_at TEXT, model TEXT, provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, ttft_seconds REAL, wall_seconds REAL, stop_reason TEXT, metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), request_id INTEGER REFERENCES request_metrics(id), ordinal INTEGER, tool_name TEXT, validity TEXT, error TEXT, recovered INTEGER, alternate_tool INTEGER, metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS pricing_snapshots(id INTEGER PRIMARY KEY, provider TEXT NOT NULL, effective_at TEXT NOT NULL, currency TEXT, prices_json TEXT NOT NULL, source TEXT, UNIQUE(provider,effective_at,prices_json));
+CREATE TABLE IF NOT EXISTS cost_observations(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), billing_mode TEXT, provider_reported_cost REAL, calculated_cost REAL, api_equivalent_cost REAL, currency TEXT, cost_source TEXT, price_snapshot_id INTEGER REFERENCES pricing_snapshots(id), input_tokens INTEGER, output_tokens INTEGER, cached_input_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER);
+CREATE TABLE IF NOT EXISTS promotion_events(id INTEGER PRIMARY KEY, identity_key TEXT, from_state TEXT, to_state TEXT, occurred_at TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS retirement_events(id INTEGER PRIMARY KEY, identity_key TEXT, occurred_at TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS default_changes(id INTEGER PRIMARY KEY, profile TEXT, old_identity_key TEXT, new_identity_key TEXT, occurred_at TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS resolution_decisions(id INTEGER PRIMARY KEY, run_id TEXT REFERENCES runs(run_id), requested_json TEXT NOT NULL, resolved_json TEXT, state TEXT NOT NULL, reason TEXT, alternatives_json TEXT);
+CREATE TABLE IF NOT EXISTS imported_evidence(source_path TEXT NOT NULL, source_sha256 TEXT NOT NULL, imported_at TEXT NOT NULL, record_count INTEGER NOT NULL, PRIMARY KEY(source_path,source_sha256));
+"""
+
+
+def default_state_dir() -> Path:
+    root = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")).expanduser()
+    return root / "ekalavya"
+
+
+def default_db_path() -> Path:
+    return default_state_dir() / "ledger.sqlite3"
+
+
+def _secure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(path, 0o700)
+
+
+def connect(path: Path | None = None) -> sqlite3.Connection:
+    target = path or default_db_path()
+    _secure_dir(target.parent)
+    conn = sqlite3.connect(target)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(SCHEMA_SQL)
+    checksum = hashlib.sha256(SCHEMA_SQL.encode()).hexdigest()
+    conn.execute("INSERT OR IGNORE INTO schema_versions VALUES(?,?,?)", (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat(), checksum))
+    conn.commit()
+    if target.exists():
+        os.chmod(target, 0o600)
+    return conn
+
+
+def record_run(conn: sqlite3.Connection, run_id: str, requested: dict[str, Any], *, resolved: dict[str, Any] | None = None, status: str = "resolved", **fields: Any) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("INSERT OR REPLACE INTO runs(run_id,started_at,ended_at,requested_json,resolved_json,resolution_reason,provider,identity_key,billing_mode,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, fields.pop("started_at", now), fields.pop("ended_at", None), json.dumps(requested, sort_keys=True), json.dumps(resolved, sort_keys=True) if resolved is not None else None, fields.pop("resolution_reason", None), fields.pop("provider", None), fields.pop("identity_key", None), fields.pop("billing_mode", None), fields.pop("raw_evidence_path", None), fields.pop("raw_evidence_sha256", None), status))
+    conn.commit()
+
+
+def record_resolution(conn: sqlite3.Connection, run_id: str, requested: dict[str, Any], resolution: dict[str, Any]) -> None:
+    conn.execute("INSERT INTO resolution_decisions(run_id,requested_json,resolved_json,state,reason,alternatives_json) VALUES(?,?,?,?,?,?)", (run_id, json.dumps(requested, sort_keys=True), json.dumps(resolution.get("resolved"), sort_keys=True), resolution.get("state", "resolved"), resolution.get("reason"), json.dumps(resolution.get("alternatives", []), sort_keys=True)))
+    conn.commit()
+
+
+def record_price_snapshot(conn: sqlite3.Connection, provider: str, effective_at: str, prices: dict[str, Any], *, currency: str | None = None, source: str = "provider") -> int:
+    encoded = json.dumps(prices, sort_keys=True)
+    existing = conn.execute("SELECT id,prices_json FROM pricing_snapshots WHERE provider=? AND effective_at=? ORDER BY id LIMIT 1", (provider, effective_at)).fetchone()
+    if existing and existing[1] != encoded:
+        raise ValueError("price snapshot is immutable for a provider/effective timestamp")
+    row = conn.execute("INSERT OR IGNORE INTO pricing_snapshots(provider,effective_at,currency,prices_json,source) VALUES(?,?,?,?,?)", (provider, effective_at, currency, encoded, source)).lastrowid
+    if not row:
+        row = conn.execute("SELECT id FROM pricing_snapshots WHERE provider=? AND effective_at=? AND prices_json=?", (provider, effective_at, encoded)).fetchone()[0]
+    conn.commit()
+    return int(row)
+
+
+def upsert_model(conn: sqlite3.Connection, identity: CandidateIdentity, *, lifecycle: str = "candidate") -> int:
+    """Insert a model identity without fabricating provider metadata."""
+    if lifecycle not in {"candidate", "current", "previous", "retired", "rejected", "removed"}:
+        raise ValueError(f"invalid lifecycle: {lifecycle}")
+    family_id = None
+    if identity.family:
+        conn.execute("INSERT OR IGNORE INTO model_families(provider,family_key,display_name) VALUES(?,?,?)", (identity.provider, identity.family, identity.display_name))
+        family_id = conn.execute("SELECT id FROM model_families WHERE provider=? AND family_key=?", (identity.provider, identity.family)).fetchone()[0]
+    values = identity.as_dict()
+    conn.execute("""INSERT INTO models(identity_key,provider,family_id,family,provider_model_id,display_name,generation,variant,capabilities_json,architecture,parameter_count,active_parameter_count,quantization,serving_engine,serving_engine_version,hardware_profile,lifecycle)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(identity_key) DO UPDATE SET lifecycle=excluded.lifecycle""", (identity.identity_key, values["provider"], family_id, values["family"], values["provider_model_id"], values["display_name"], values["generation"], values["variant"], json.dumps(values["capabilities"], sort_keys=True), values["architecture"], values["parameter_count"], values["active_parameter_count"], values["quantization"], values["serving_engine"], values["serving_engine_version"], values["hardware_profile"], lifecycle))
+    conn.commit()
+    return int(conn.execute("SELECT id FROM models WHERE identity_key=?", (identity.identity_key,)).fetchone()[0])
+
+
+def record_cost(conn: sqlite3.Connection, run_id: str, *, billing_mode: str, provider_reported_cost: float | None = None, calculated_cost: float | None = None, api_equivalent_cost: float | None = None, currency: str | None = None, cost_source: str = "unavailable", price_snapshot_id: int | None = None, input_tokens: int | None = None, output_tokens: int | None = None) -> None:
+    if billing_mode not in {"metered_api", "subscription", "local", "unknown"}:
+        raise ValueError("invalid billing mode")
+    conn.execute("INSERT INTO cost_observations(run_id,billing_mode,provider_reported_cost,calculated_cost,api_equivalent_cost,currency,cost_source,price_snapshot_id,input_tokens,output_tokens) VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, billing_mode, provider_reported_cost, calculated_cost, api_equivalent_cost, currency, cost_source, price_snapshot_id, input_tokens, output_tokens))
+    conn.commit()
+
+
+def import_legacy_state(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
+    """Import hashes and JSON records without moving, interpreting, or exposing them."""
+    counts = {"files": 0, "records": 0, "skipped": 0}
+    if not root.is_dir():
+        return counts
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.is_symlink() or path.suffix.lower() not in {".json", ".jsonl", ".md", ".csv", ".txt"}:
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            counts["skipped"] += 1
+            continue
+        digest = hashlib.sha256(data).hexdigest()
+        key = str(path.resolve())
+        if conn.execute("SELECT 1 FROM imported_evidence WHERE source_path=? AND source_sha256=?", (key, digest)).fetchone():
+            counts["skipped"] += 1
+            continue
+        records = 1
+        if path.suffix.lower() == ".jsonl":
+            records = sum(1 for line in data.decode("utf-8", "replace").splitlines() if line.strip())
+        conn.execute("INSERT INTO imported_evidence VALUES(?,?,?,?)", (key, digest, datetime.now(timezone.utc).isoformat(), records))
+        if path.name == "execution.json":
+            try:
+                raw = json.loads(data.decode("utf-8", "replace"))
+            except (ValueError, UnicodeDecodeError):
+                raw = None
+            if isinstance(raw, dict):
+                safe = {field: raw.get(field) for field in ("delegate", "provider", "requested_model", "requested_effort", "started_at", "ended_at", "exit_code", "response_status", "response_recorded", "response_sha256")}
+                legacy_run_id = "legacy:" + hashlib.sha256((key + "\0" + digest).encode()).hexdigest()
+                conn.execute("INSERT OR IGNORE INTO runs(run_id,started_at,ended_at,profile,requested_json,resolved_json,provider,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?)", (legacy_run_id, raw.get("started_at") or datetime.now(timezone.utc).isoformat(), raw.get("ended_at"), raw.get("delegate"), json.dumps(safe, sort_keys=True), json.dumps({"provider_model_id": raw.get("requested_model"), "provider": raw.get("provider")}, sort_keys=True), raw.get("provider"), key, digest, "imported"))
+        counts["files"] += 1; counts["records"] += records
+    conn.commit()
+    return counts
