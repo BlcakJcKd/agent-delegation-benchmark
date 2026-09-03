@@ -18,14 +18,15 @@ ROOT_ARTIFACTS = (
     "REPORT.md", "run-summary.json", "discovery.json", "plot-metadata.json",
     "AUDIT_REPORT.md", "CORRECTED_REPORT.md", "telemetry-semantics.md",
     "token-semantics.md", "task-check-matrix.md", "task-check-matrix.csv",
-    "VALIDATION_REPORT.md",
+    "configuration-summary.json", "VALIDATION_REPORT.md", "calibration-summary.json",
 )
 OPTIONAL_PLOTS = (
     "reasoning-correctness.png", "reasoning-wall.png", "score-vs-wall.png",
     "tokens-vs-correctness.png", "baseline-vs-final.png", "delta-by-configuration.png",
     "final-vs-wall.png", "final-vs-tokens.png",
 )
-OPTIONAL_DIRS = ("provenance", "validation", "task-specifications", "verifier-contracts", "edit-scopes")
+OPTIONAL_DIRS = ("provenance", "validation", "task-specifications", "verifier-contracts", "edit-scopes", "calibration-evidence")
+PUBLIC_SNAPSHOT_DIR = "baseline-task-snapshots"
 REQUESTED_SEMANTICS = {
     "request_metric_semantics", "tool_event_telemetry", "token_metric_semantics",
 }
@@ -86,7 +87,7 @@ def _git_identity() -> str | None:
 
 
 def _attempt_counts(state: Path) -> dict[str, int]:
-    evidence = sorted((state / "evidence").glob("*.json"))
+    evidence = sorted({path for directory in ("evidence", "calibration-evidence") for path in (state / directory).glob("*.json")})
     attempts = completed = timeouts = 0
     for path in evidence:
         try:
@@ -94,10 +95,18 @@ def _attempt_counts(state: Path) -> dict[str, int]:
         except (OSError, ValueError):
             continue
         attempts += 1
-        if item.get("timed_out") is True:
+        if item.get("timed_out") is True or item.get("status") == "explicit_timeout":
             timeouts += 1
-        elif item.get("exit_code") == 0:
+        elif item.get("status") == "completed" or (item.get("exit_code") == 0 and item.get("status") not in {"evaluator_tampering", "harness_failure", "malformed_evaluator"}):
             completed += 1
+    stop_record = state / "validation" / "calibration-stop.json"
+    if stop_record.is_file():
+        try:
+            item = json.loads(stop_record.read_text())
+        except (OSError, ValueError):
+            item = {}
+        if item.get("status") == "harness_failure":
+            attempts += 1
     return {"attempts": attempts, "completed": completed, "failed": attempts - completed - timeouts, "timeouts": timeouts}
 
 
@@ -154,6 +163,10 @@ def create_review_bundle(
         source = state / directory
         if source.is_dir():
             candidates.extend(p for p in sorted(source.rglob("*")) if p.is_file() and "__pycache__" not in p.parts)
+    if _evaluation_class(state, experiment) == "public_characterization":
+        source = state / PUBLIC_SNAPSHOT_DIR
+        if source.is_dir():
+            candidates.extend(p for p in sorted(source.rglob("*")) if p.is_file() and "__pycache__" not in p.parts)
     evidence = state / "evidence"
     if evidence.is_dir():
         candidates.extend(p for p in sorted(evidence.glob("*.json")) if p.is_file())
@@ -199,7 +212,7 @@ def create_review_bundle(
         "credentials_included": False,
         "configuration_included": False,
         "ledger_included": False,
-        "allowlist": {"root_artifacts": list(ROOT_ARTIFACTS), "optional_plots": list(OPTIONAL_PLOTS), "optional_directories": list(OPTIONAL_DIRS), "evidence_glob": "evidence/*.json"},
+        "allowlist": {"root_artifacts": list(ROOT_ARTIFACTS), "optional_plots": list(OPTIONAL_PLOTS), "optional_directories": list(OPTIONAL_DIRS), "public_snapshot_directory": PUBLIC_SNAPSHOT_DIR, "evidence_glob": "evidence/*.json"},
     }
     if correction is not None:
         manifest["provenance_correction"] = {key: correction.get(key) for key in ("originally_recorded_suite_sha", "corrected_suite_sha", "correction_reason", "correction_timestamp", "ledger_correction_id")}
