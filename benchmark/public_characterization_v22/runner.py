@@ -119,6 +119,11 @@ def _read_rows(root,phase=None):
  directory=root/("calibration-evidence" if phase==PHASE_CALIBRATION else "evidence"); return [json.loads(p.read_text()) for p in sorted(directory.glob("*.json"))] if directory.is_dir() else []
 def _calibration_useful(rows):
  return len(rows)==2 and all(r["status"]=="completed" and r["final_score"] is not None and r["final_score"]!=r["baseline_score"] and r["final_score"]<100 and 50<=r["final_score"]<=87.5 for r in rows)
+def _calibration_stop_reason(result):
+ if result.get("status") != "completed": return "calibration_attempt_not_clean"
+ if result.get("final_score") == 100.0: return "calibration_task_saturated"
+ if result.get("final_score") == result.get("baseline_score"): return "calibration_no_improvement"
+ return None
 def _plot(rows,path,kind,mode):
  obs=[r for r in rows if r["status"]=="completed" and r.get("final_score") is not None]
  if not obs:return {"status":"skipped","reason":"no_completed_observations"}
@@ -170,8 +175,11 @@ def pilot():
  (root/"discovery.json").write_text(json.dumps({"experiment":SUITE_NAME,"evaluation_class":EVALUATION_CLASS,"harness":"agy","harness_version":agyver,"calibration_seed":CALIBRATION_SEED,"evaluation_seeds":EVALUATION_SEEDS,"calibration_configuration":{"model":CALIBRATION_CONFIG[0],"reasoning":CALIBRATION_CONFIG[1]},"comparison_configurations":[{"model":m,"reasoning":r} for m,r in COMPARISON_CONFIGURATIONS],"attempt_timeout_seconds":ATTEMPT_TIMEOUT_SECONDS},indent=2,sort_keys=True)+"\n")
  hid=record_harness(conn,"agy",version=agyver,adapter_version="benchmark.public_characterization_v22.runner",transport="agy",capabilities=agy["capabilities"],telemetry=agy["telemetry"],eligibility=agy["eligibility"],evidence_label="public_characterization_non_adversarial",observed_at=now())
  sid,tids=_record_suite(conn,instances,prov,baselines,gate["reference_validation"]["validation_timestamp"]); results=[]
+ stop_reason=None
  for family in FAMILIES:
-  x=next(z for z in instances if z.family==family); results.append(_attempt(conn,sid,tids[x.task_id],x,baselines[family],CALIBRATION_CONFIG[0],CALIBRATION_CONFIG[1],hid,root,agy["telemetry"],agyver,PHASE_CALIBRATION))
+  x=next(z for z in instances if z.family==family); result=_attempt(conn,sid,tids[x.task_id],x,baselines[family],CALIBRATION_CONFIG[0],CALIBRATION_CONFIG[1],hid,root,agy["telemetry"],agyver,PHASE_CALIBRATION); results.append(result)
+  stop_reason=_calibration_stop_reason(result)
+  if stop_reason is not None: break
  useful=_calibration_useful(results)
  if useful:
   eval_gates=[validate_preflight(seed=EVALUATION_SEEDS[f],phase=PHASE_COMPARATIVE,require_reference=True) for f in FAMILIES]
@@ -180,7 +188,7 @@ def pilot():
   for model,reason in COMPARISON_CONFIGURATIONS:
    for family in FAMILIES:
     x=next(z for z in eval_instances if z.family==family); results.append(_attempt(conn,sid,tids2[x.task_id],x,eval_baselines[family],model,reason,hid,root,agy["telemetry"],agyver,PHASE_COMPARATIVE))
- summary={"experiment":SUITE_NAME,"evaluation_class":EVALUATION_CLASS,"suite_git_sha":prov["git_sha"],"calibration_seed":CALIBRATION_SEED,"evaluation_seeds":EVALUATION_SEEDS,"calibration_attempts":2,"comparative_attempts":max(0,len(results)-2),"calibration_useful":useful,"comparative_ran":useful,"attempts":len(results),"completed":sum(x["status"]=="completed" for x in results),"harness_failure":sum(x["status"]=="harness_failure" for x in results),"explicit_timeout":sum(x["status"]=="explicit_timeout" for x in results),"malformed_evaluator":sum(x["status"]=="malformed_evaluator" for x in results),"evaluator_tampering":sum(x["status"]=="evaluator_tampering" for x in results)}
+ summary={"experiment":SUITE_NAME,"evaluation_class":EVALUATION_CLASS,"suite_git_sha":prov["git_sha"],"calibration_seed":CALIBRATION_SEED,"evaluation_seeds":EVALUATION_SEEDS,"calibration_attempts":len(results),"comparative_attempts":max(0,len(results)-2),"calibration_useful":useful,"calibration_stop_reason":stop_reason,"comparative_ran":useful,"attempts":len(results),"completed":sum(x["status"]=="completed" for x in results),"harness_failure":sum(x["status"]=="harness_failure" for x in results),"explicit_timeout":sum(x["status"]=="explicit_timeout" for x in results),"malformed_evaluator":sum(x["status"]=="malformed_evaluator" for x in results),"evaluator_tampering":sum(x["status"]=="evaluator_tampering" for x in results)}
  (root/"run-summary.json").write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n"); report(root); return summary
 
 if __name__=="__main__":

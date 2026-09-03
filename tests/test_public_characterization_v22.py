@@ -9,7 +9,7 @@ from benchmark.public_characterization_v22 import ATTEMPT_TIMEOUT_SECONDS, CALIB
 from benchmark.public_characterization_v22.evaluate import evaluate
 from benchmark.public_characterization_v22.generate import make_instance, materialize
 from benchmark.public_characterization_v22.gold_accessibility import audit_tracked_gold_accessibility
-from benchmark.public_characterization_v22.runner import ROOT_CLUSTERS, _calibration_useful, prohibited_files
+from benchmark.public_characterization_v22.runner import ROOT_CLUSTERS, _calibration_stop_reason, _calibration_useful, prohibited_files
 from benchmark.review_bundle import create_review_bundle
 
 
@@ -45,6 +45,8 @@ class PublicCharacterizationV22Tests(unittest.TestCase):
         base = {"status": "completed", "baseline_score": 25.0, "final_score": 75.0}
         self.assertTrue(_calibration_useful([base, {**base, "final_score": 62.5}]))
         self.assertFalse(_calibration_useful([base, {**base, "final_score": 100.0}]))
+        self.assertEqual(_calibration_stop_reason({**base, "final_score": 100.0}), "calibration_task_saturated")
+        self.assertEqual(_calibration_stop_reason({**base, "final_score": 25.0}), "calibration_no_improvement")
 
     def test_structural_metadata_has_four_clusters_per_family(self):
         self.assertTrue(all(len(clusters) >= 4 for clusters in ROOT_CLUSTERS.values()))
