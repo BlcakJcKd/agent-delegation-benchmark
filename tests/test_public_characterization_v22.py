@@ -28,13 +28,13 @@ class PublicCharacterizationV22Tests(unittest.TestCase):
                 workspace = materialize(instance, Path(temporary) / family)
                 controller = evaluate(instance, workspace)
                 visible = subprocess.run([sys.executable, str(workspace / "verifier/verify.py")], cwd=workspace, capture_output=True, text=True, check=False)
-                self.assertEqual(controller["score"], 37.5 if i == 0 else 25.0)
+                self.assertEqual(controller["score"], 12.5)
                 self.assertEqual(controller["check_vector"], json.loads(visible.stdout)["checks"])
                 self.assertEqual(len(controller["check_vector"]), 8)
 
     def test_generated_artifacts_are_ignored_but_data_is_immutable(self):
         instance = make_instance("P1_stateful_inventory", CALIBRATION_SEED)
-        self.assertEqual(prohibited_files(["data/items.json", "__pycache__/x.pyc", "app/x.py"], instance.edit_scope), ["data/items.json"])
+        self.assertEqual(prohibited_files(["data/items.json", "__pycache__/x.pyc", "app/x.py"], instance.edit_scope), ["data/items.json", "app/x.py"])
 
     def test_gold_accessibility_gate_has_no_answer_bearing_source(self):
         result = audit_tracked_gold_accessibility(Path(__file__).resolve().parents[1])
