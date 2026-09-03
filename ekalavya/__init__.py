@@ -5,6 +5,6 @@ The operational package is deliberately separate from the historical
 """
 
 __version__ = "0.3.0"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 __all__ = ["__version__", "SCHEMA_VERSION"]

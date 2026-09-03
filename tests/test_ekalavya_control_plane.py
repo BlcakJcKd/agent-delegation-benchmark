@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ekalavya.catalogue import add_candidate, promote, selectable
 from ekalavya.config import ensure_control_files, migrate_legacy_config
-from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, upsert_model
+from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, upsert_model
 from ekalavya.resolver import resolve
 from ekalavya.schema import CandidateIdentity, RunIntent
 
@@ -85,6 +85,15 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
             record_cost(conn, "run", billing_mode="subscription", cost_source="unavailable")
             row = conn.execute("SELECT provider_reported_cost,api_equivalent_cost FROM cost_observations WHERE run_id='run'").fetchone()
             self.assertIsNone(row[0]); self.assertIsNone(row[1])
+
+    def test_evaluation_classes_are_explicit_and_historical_defaults_are_unknown(self):
+        with tempfile.TemporaryDirectory() as d:
+            conn = connect(Path(d) / "ledger.sqlite3")
+            record_run(conn, "public", {"profile": "flash"}, evaluation_class="public_characterization")
+            suite_id = record_benchmark_suite(conn, "public", "public", "1", evaluation_class="public_characterization")
+            self.assertEqual(conn.execute("SELECT evaluation_class FROM runs WHERE run_id='public'").fetchone()[0], "public_characterization")
+            self.assertEqual(conn.execute("SELECT evaluation_class FROM benchmark_suites WHERE id=?", (suite_id,)).fetchone()[0], "public_characterization")
+            with self.assertRaises(ValueError): record_run(conn, "bad", {}, evaluation_class="not-a-class")
 
     def test_config_migration_preserves_source_and_permissions_idempotently(self):
         with tempfile.TemporaryDirectory() as d:

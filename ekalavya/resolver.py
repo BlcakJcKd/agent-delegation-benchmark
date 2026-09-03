@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .catalogue import expand_runtime_variants
 from .schema import CandidateIdentity, ReasoningPolicy, Resolution, RunIntent
 
 SAME_PROVIDER_NATIVE = {
@@ -16,7 +17,8 @@ SAME_PROVIDER_NATIVE = {
 def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[str, Any]]) -> Resolution:
     permitted = set(profile.get("permitted_candidates") or [])
     default_key = profile.get("default_identity_key")
-    eligible = [c for c in candidates if c.get("lifecycle") in {"current", "previous", "candidate"} and (not permitted or c.get("identity_key") in permitted)]
+    expanded = expand_runtime_variants(candidates)
+    eligible = [c for c in expanded if c.get("lifecycle") in {"current", "previous", "candidate"} and (not permitted or c.get("identity_key") in permitted or c.get("catalogue_parent_identity_key") in permitted)]
     filters = {"provider": intent.provider, "family": intent.family, "provider_model_id": intent.model}
     filtered = [c for c in eligible if all(v is None or c.get(k) == v for k, v in filters.items())]
     alternatives = tuple({"identity_key": c.get("identity_key"), "provider": c.get("provider"), "family": c.get("family"), "provider_model_id": c.get("provider_model_id"), "lifecycle": c.get("lifecycle")} for c in eligible)
@@ -24,7 +26,16 @@ def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[st
     if default_key and not any(c.get("identity_key") == default_key for c in filtered):
         if not filtered:
             return Resolution(intent, None, reason="configured profile default does not satisfy requested constraints", state="unavailable", alternatives=alternatives)
-    chosen = next((c for c in filtered if c.get("identity_key") == default_key), None) if default_key else (filtered[0] if len(filtered) == 1 else None)
+    requested_variant = intent.reasoning if intent.reasoning is not None else profile.get("default_reasoning")
+    chosen = None
+    if default_key:
+        # A generation-level default resolves through its exact runtime
+        # variant.  This preserves the parent lifecycle while ensuring the
+        # provider receives gemini-3.x-flash-low/medium/high literally.
+        chosen = next((c for c in filtered if c.get("catalogue_parent_identity_key") == default_key and (requested_variant is None or c.get("variant") == requested_variant)), None)
+        chosen = chosen or next((c for c in filtered if c.get("identity_key") == default_key), None)
+    elif len(filtered) == 1:
+        chosen = filtered[0]
     if chosen is None and explicit_candidate and len(filtered) == 1:
         chosen = filtered[0]
     if chosen is None:

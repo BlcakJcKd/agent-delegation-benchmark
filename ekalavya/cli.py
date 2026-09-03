@@ -23,6 +23,7 @@ from . import __version__
 from .catalogue import load_catalogue, save_catalogue
 from .config import config_root, migrate_legacy_config
 from .executor import execute
+from .harness_registry import current_registry, validate_registry
 from .ledger import connect, default_db_path, finalize_run, record_availability, record_resolution, record_run, upsert_model
 from .migrate import migrate_all
 from .resolver import resolve
@@ -219,6 +220,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
+    if getattr(args, "bench_action", None) in {"status", "harnesses"}:
+        records = current_registry(); validate_registry(records)
+        if args.bench_action == "status":
+            payload = {"execution_classes": ["ordinary", "public_characterization", "hidden_benchmark"], "harnesses": [{"name": item["name"], "version": item["version"], "installed": item["installed"], "eligibility": item["eligibility"], "reason": item["reason"]} for item in records]}
+        else:
+            payload = {"harnesses": records}
+        _json_or_text(payload, args.json); return 0
     print("Ekalavya benchmark subsystem delegates to the existing benchmark.runner; no benchmark mutation is performed by this command.")
     return 0
 
@@ -234,7 +242,10 @@ def _parser() -> argparse.ArgumentParser:
     q=sub.add_parser("history"); q.add_argument("--profile"); q.add_argument("--provider"); q.add_argument("--model"); q.add_argument("--limit", type=int, default=20); common(q); q.set_defaults(func=cmd_history)
     q=sub.add_parser("spend"); common(q); q.set_defaults(func=cmd_spend)
     q=sub.add_parser("doctor"); common(q); q.set_defaults(func=cmd_doctor)
-    q=sub.add_parser("bench"); q.set_defaults(func=cmd_bench)
+    q=sub.add_parser("bench", help="read-only benchmark and harness inspection"); bench_sub=q.add_subparsers(dest="bench_action")
+    b=bench_sub.add_parser("status", help="show harness eligibility by execution class"); common(b); b.set_defaults(func=cmd_bench)
+    b=bench_sub.add_parser("harnesses", help="show detailed harness capabilities"); common(b); b.set_defaults(func=cmd_bench)
+    q.set_defaults(func=cmd_bench, bench_action=None, json=False)
     q=sub.add_parser("run"); q.add_argument("profile"); q.add_argument("--provider"); q.add_argument("--family"); q.add_argument("--model"); q.add_argument("--reasoning"); q.add_argument("--harness"); q.add_argument("--workspace", type=Path); q.add_argument("--prompt-file", type=Path); q.add_argument("--primary"); q.add_argument("--timeout", type=int, default=None); q.add_argument("--json", action="store_true"); q.set_defaults(func=cmd_run)
     return p
 

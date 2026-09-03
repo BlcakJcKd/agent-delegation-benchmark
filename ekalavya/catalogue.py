@@ -69,6 +69,89 @@ def selectable(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [e for e in entries if e.get("lifecycle") in {"current", "previous", "candidate"}]
 
 
+def expand_runtime_variants(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expose runtime variants while retaining lifecycle on the parent identity.
+
+    A generation/family catalogue entry may carry exact provider runtime IDs
+    (for example, reasoning variants).  Resolution sees those IDs as virtual
+    candidates, but their lifecycle remains inherited from the parent entry.
+    """
+    expanded: list[dict[str, Any]] = []
+    identity_fields = set(CandidateIdentity.__dataclass_fields__)
+    for entry in entries:
+        expanded.append(dict(entry))
+        variants = entry.get("runtime_variants") or []
+        for variant in variants:
+            if not isinstance(variant, dict) or not variant.get("provider_model_id"):
+                continue
+            child = dict(entry)
+            child.update({k: v for k, v in variant.items() if k not in {"lifecycle", "catalogue_key"}})
+            if variant.get("reasoning"):
+                child["variant"] = variant["reasoning"]
+            child["lifecycle"] = entry.get("lifecycle", "candidate")
+            child["catalogue_parent_identity_key"] = entry.get("identity_key")
+            identity = CandidateIdentity(**{k: child.get(k) for k in identity_fields})
+            child["identity_key"] = identity.identity_key
+            expanded.append(child)
+    return expanded
+
+
+def canonicalize_gemini_flash_generations(
+    entries: list[dict[str, Any]],
+    discovered: list[dict[str, str]],
+    *,
+    observed_at: str,
+    serving_engine_version: str | None = None,
+) -> list[dict[str, Any]]:
+    """Store Gemini Flash lifecycle by generation, with exact runtime variants."""
+    generations = {"3.6": "previous", "3.7": "current", "3.8": "candidate"}
+    discovered_by_generation: dict[str, list[dict[str, str]]] = {generation: [] for generation in generations}
+    for item in discovered:
+        model_id = item.get("provider_model_id", "")
+        parts = model_id.split("-")
+        if len(parts) == 4 and parts[0] == "gemini" and parts[2] == "flash" and parts[1] in generations:
+            discovered_by_generation[parts[1]].append(item)
+    def is_flash_generation_entry(entry: dict[str, Any]) -> bool:
+        if entry.get("provider") != "gemini" or entry.get("family") != "flash":
+            return False
+        model_id = entry.get("provider_model_id", "")
+        return entry.get("generation") in generations or any(model_id.startswith(f"gemini-{generation}-flash-") for generation in generations)
+
+    existing = [e for e in entries if not is_flash_generation_entry(e)]
+    result = list(existing)
+    for generation, lifecycle in generations.items():
+        variants = sorted(discovered_by_generation[generation], key=lambda item: item["provider_model_id"])
+        if not variants:
+            continue
+        medium = next((item for item in variants if item["provider_model_id"].endswith("-medium")), variants[0])
+        old = next((e for e in entries if e.get("provider") == "gemini" and e.get("family") == "flash" and (e.get("generation") == generation or e.get("provider_model_id", "").startswith(f"gemini-{generation}-flash-"))), {})
+        identity = CandidateIdentity(
+            provider="gemini", family="flash", provider_model_id=medium["provider_model_id"],
+            display_name=f"Gemini {generation} Flash", generation=generation, variant="medium",
+            capabilities={"reasoning_values": [item["provider_model_id"].rsplit("-", 1)[-1] for item in variants]},
+            serving_engine="agy", serving_engine_version=serving_engine_version,
+        )
+        item = dict(old)
+        item.update(identity.as_dict())
+        item.update({
+            "identity_key": identity.identity_key,
+            "catalogue_key": f"gemini:flash:{generation}",
+            "lifecycle_scope": "generation_family",
+            "lifecycle": lifecycle,
+            "default_runtime_variant": "medium",
+            "runtime_variants": [
+                {"provider_model_id": variant["provider_model_id"], "display_name": variant.get("display_name"), "reasoning": variant["provider_model_id"].rsplit("-", 1)[-1]}
+                for variant in variants
+            ],
+            "discovery_source": "agy models",
+            "discovery_timestamp": observed_at,
+            "availability_observed_at": observed_at,
+            "transport": "agy",
+        })
+        result.append(item)
+    return result
+
+
 def promote(entries: list[dict[str, Any]], identity_key: str, reason: str = "explicit promotion") -> list[dict[str, Any]]:
     return transition(entries, identity_key, "current")
 

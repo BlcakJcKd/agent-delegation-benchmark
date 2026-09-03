@@ -13,19 +13,20 @@ from typing import Any, Iterable
 from . import SCHEMA_VERSION
 from .schema import CandidateIdentity
 
+EVALUATION_CLASSES = {"ordinary", "public_characterization", "hidden_benchmark", "unknown"}
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_versions(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, checksum TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS model_families(id INTEGER PRIMARY KEY, provider TEXT NOT NULL, family_key TEXT NOT NULL, lineage TEXT, display_name TEXT, UNIQUE(provider,family_key));
 CREATE TABLE IF NOT EXISTS models(id INTEGER PRIMARY KEY, identity_key TEXT NOT NULL UNIQUE, provider TEXT NOT NULL, family_id INTEGER REFERENCES model_families(id), family TEXT, provider_model_id TEXT, display_name TEXT, generation TEXT, variant TEXT, capabilities_json TEXT, architecture TEXT, parameter_count TEXT, active_parameter_count TEXT, quantization TEXT, serving_engine TEXT, serving_engine_version TEXT, hardware_profile TEXT, lifecycle TEXT NOT NULL DEFAULT 'candidate', discovered_at TEXT, retired_at TEXT);
 CREATE TABLE IF NOT EXISTS model_availability(id INTEGER PRIMARY KEY, model_id INTEGER NOT NULL REFERENCES models(id), state TEXT NOT NULL, observed_at TEXT NOT NULL, source TEXT, details_json TEXT);
-CREATE TABLE IF NOT EXISTS harnesses(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, adapter_version TEXT, transport TEXT, UNIQUE(name,version,adapter_version));
+CREATE TABLE IF NOT EXISTS harnesses(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, adapter_version TEXT, transport TEXT, capabilities_json TEXT, eligibility_json TEXT, evidence_label TEXT, observed_at TEXT, UNIQUE(name,version,adapter_version));
 CREATE TABLE IF NOT EXISTS serving_engines(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, UNIQUE(name,version));
 CREATE TABLE IF NOT EXISTS hardware_profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, details_json TEXT);
 CREATE TABLE IF NOT EXISTS profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, default_identity_key TEXT, permitted_candidates_json TEXT, required_capabilities_json TEXT, writable INTEGER, reasoning_policy TEXT, default_reasoning TEXT, enabled INTEGER NOT NULL DEFAULT 1);
-CREATE TABLE IF NOT EXISTS benchmark_suites(id INTEGER PRIMARY KEY, name TEXT NOT NULL, layer TEXT NOT NULL, version TEXT NOT NULL, git_sha TEXT, metadata_json TEXT, UNIQUE(name,version,git_sha));
+CREATE TABLE IF NOT EXISTS benchmark_suites(id INTEGER PRIMARY KEY, name TEXT NOT NULL, layer TEXT NOT NULL, version TEXT NOT NULL, evaluation_class TEXT NOT NULL DEFAULT 'unknown', git_sha TEXT, metadata_json TEXT, UNIQUE(name,version,git_sha));
 CREATE TABLE IF NOT EXISTS benchmark_tasks(id INTEGER PRIMARY KEY, suite_id INTEGER REFERENCES benchmark_suites(id), family TEXT NOT NULL, task_id TEXT NOT NULL, variant_seed TEXT, content_hash TEXT, prompt_hash TEXT, evaluator_hash TEXT, UNIQUE(suite_id,task_id,variant_seed));
-CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT, profile TEXT, requested_json TEXT NOT NULL, resolved_json TEXT, resolution_reason TEXT, provider TEXT, identity_key TEXT, harness_id INTEGER, engine_id INTEGER, hardware_id INTEGER, billing_mode TEXT, raw_evidence_path TEXT, raw_evidence_sha256 TEXT, status TEXT);
+CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT, profile TEXT, requested_json TEXT NOT NULL, resolved_json TEXT, resolution_reason TEXT, provider TEXT, identity_key TEXT, harness_id INTEGER, engine_id INTEGER, hardware_id INTEGER, billing_mode TEXT, evaluation_class TEXT NOT NULL DEFAULT 'unknown', raw_evidence_path TEXT, raw_evidence_sha256 TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS task_attempts(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), task_id INTEGER REFERENCES benchmark_tasks(id), score REAL, public_score REAL, hidden_score REAL, invariant_score REAL, api_score REAL, scope_compliant INTEGER, wall_seconds REAL, metadata_json TEXT);
 CREATE TABLE IF NOT EXISTS request_metrics(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), ordinal INTEGER, started_at TEXT, ended_at TEXT, model TEXT, provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, ttft_seconds REAL, wall_seconds REAL, stop_reason TEXT, metadata_json TEXT);
 CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), request_id INTEGER REFERENCES request_metrics(id), ordinal INTEGER, tool_name TEXT, validity TEXT, error TEXT, recovered INTEGER, alternate_tool INTEGER, metadata_json TEXT);
@@ -53,6 +54,24 @@ def _secure_dir(path: Path) -> None:
     os.chmod(path, 0o700)
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Additive migrations for ledgers created before evaluation classes."""
+    _ensure_column(conn, "harnesses", "capabilities_json", "TEXT")
+    _ensure_column(conn, "harnesses", "eligibility_json", "TEXT")
+    _ensure_column(conn, "harnesses", "evidence_label", "TEXT")
+    _ensure_column(conn, "harnesses", "observed_at", "TEXT")
+    _ensure_column(conn, "benchmark_suites", "evaluation_class", "TEXT NOT NULL DEFAULT 'unknown'")
+    _ensure_column(conn, "runs", "evaluation_class", "TEXT NOT NULL DEFAULT 'unknown'")
+    conn.execute("UPDATE benchmark_suites SET evaluation_class='unknown' WHERE evaluation_class IS NULL OR evaluation_class='' ")
+    conn.execute("UPDATE runs SET evaluation_class='unknown' WHERE evaluation_class IS NULL OR evaluation_class='' ")
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     target = path or default_db_path()
     _secure_dir(target.parent)
@@ -61,6 +80,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA_SQL)
+    _migrate_schema(conn)
     checksum = hashlib.sha256(SCHEMA_SQL.encode()).hexdigest()
     conn.execute("INSERT OR IGNORE INTO schema_versions VALUES(?,?,?)", (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat(), checksum))
     conn.commit()
@@ -69,9 +89,11 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-def record_run(conn: sqlite3.Connection, run_id: str, requested: dict[str, Any], *, resolved: dict[str, Any] | None = None, status: str = "resolved", **fields: Any) -> None:
+def record_run(conn: sqlite3.Connection, run_id: str, requested: dict[str, Any], *, resolved: dict[str, Any] | None = None, status: str = "resolved", evaluation_class: str = "unknown", **fields: Any) -> None:
+    if evaluation_class not in EVALUATION_CLASSES:
+        raise ValueError(f"invalid evaluation class: {evaluation_class!r}")
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute("INSERT OR REPLACE INTO runs(run_id,started_at,ended_at,profile,requested_json,resolved_json,resolution_reason,provider,identity_key,harness_id,engine_id,hardware_id,billing_mode,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, fields.pop("started_at", now), fields.pop("ended_at", None), fields.pop("profile", requested.get("profile")), json.dumps(requested, sort_keys=True), json.dumps(resolved, sort_keys=True) if resolved is not None else None, fields.pop("resolution_reason", None), fields.pop("provider", None), fields.pop("identity_key", None), fields.pop("harness_id", None), fields.pop("engine_id", None), fields.pop("hardware_id", None), fields.pop("billing_mode", None), fields.pop("raw_evidence_path", None), fields.pop("raw_evidence_sha256", None), status))
+    conn.execute("INSERT OR REPLACE INTO runs(run_id,started_at,ended_at,profile,requested_json,resolved_json,resolution_reason,provider,identity_key,harness_id,engine_id,hardware_id,billing_mode,evaluation_class,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, fields.pop("started_at", now), fields.pop("ended_at", None), fields.pop("profile", requested.get("profile")), json.dumps(requested, sort_keys=True), json.dumps(resolved, sort_keys=True) if resolved is not None else None, fields.pop("resolution_reason", None), fields.pop("provider", None), fields.pop("identity_key", None), fields.pop("harness_id", None), fields.pop("engine_id", None), fields.pop("hardware_id", None), fields.pop("billing_mode", None), evaluation_class, fields.pop("raw_evidence_path", None), fields.pop("raw_evidence_sha256", None), status))
     conn.commit()
 
 
@@ -112,14 +134,17 @@ def record_availability(conn: sqlite3.Connection, model_id: int, *, state: str, 
     conn.commit()
 
 
-def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None) -> int:
-    conn.execute("INSERT OR IGNORE INTO harnesses(name,version,adapter_version,transport) VALUES(?,?,?,?)", (name, version, adapter_version, transport))
+def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None, capabilities: dict[str, Any] | None = None, eligibility: dict[str, str] | None = None, evidence_label: str | None = None, observed_at: str | None = None) -> int:
+    conn.execute("INSERT OR IGNORE INTO harnesses(name,version,adapter_version,transport,capabilities_json,eligibility_json,evidence_label,observed_at) VALUES(?,?,?,?,?,?,?,?)", (name, version, adapter_version, transport, json.dumps(capabilities, sort_keys=True) if capabilities is not None else None, json.dumps(eligibility, sort_keys=True) if eligibility is not None else None, evidence_label, observed_at))
+    conn.execute("UPDATE harnesses SET capabilities_json=COALESCE(?,capabilities_json), eligibility_json=COALESCE(?,eligibility_json), evidence_label=COALESCE(?,evidence_label), observed_at=COALESCE(?,observed_at) WHERE name IS ? AND version IS ? AND adapter_version IS ?", (json.dumps(capabilities, sort_keys=True) if capabilities is not None else None, json.dumps(eligibility, sort_keys=True) if eligibility is not None else None, evidence_label, observed_at, name, version, adapter_version))
     conn.commit()
     return int(conn.execute("SELECT id FROM harnesses WHERE name IS ? AND version IS ? AND adapter_version IS ?", (name, version, adapter_version)).fetchone()[0])
 
 
-def record_benchmark_suite(conn: sqlite3.Connection, name: str, layer: str, version: str, *, git_sha: str | None = None, metadata: dict[str, Any] | None = None) -> int:
-    conn.execute("INSERT OR IGNORE INTO benchmark_suites(name,layer,version,git_sha,metadata_json) VALUES(?,?,?,?,?)", (name, layer, version, git_sha, json.dumps(metadata or {}, sort_keys=True)))
+def record_benchmark_suite(conn: sqlite3.Connection, name: str, layer: str, version: str, *, git_sha: str | None = None, metadata: dict[str, Any] | None = None, evaluation_class: str = "unknown") -> int:
+    if evaluation_class not in EVALUATION_CLASSES:
+        raise ValueError(f"invalid evaluation class: {evaluation_class!r}")
+    conn.execute("INSERT OR IGNORE INTO benchmark_suites(name,layer,version,evaluation_class,git_sha,metadata_json) VALUES(?,?,?,?,?,?)", (name, layer, version, evaluation_class, git_sha, json.dumps(metadata or {}, sort_keys=True)))
     conn.commit()
     return int(conn.execute("SELECT id FROM benchmark_suites WHERE name=? AND version=? AND git_sha IS ?", (name, version, git_sha)).fetchone()[0])
 

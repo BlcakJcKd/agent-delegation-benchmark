@@ -88,6 +88,17 @@ variant, content/prompt/evaluator hashes, candidate identity, harness, and
 reasoning. A small longitudinal core can remain stable while evolving suites
 such as Benchmark V2 provide fresh discrimination.
 
+Ekalavya distinguishes three evaluation classes: `ordinary` delegation may
+use normal project access; `public_characterization` is objective but
+non-adversarially isolated, uses disposable public fixtures with visible
+acceptance checks, and contains no authoritative/reference repair in a
+candidate workspace; `hidden_benchmark` additionally requires proven
+containment from evaluators, reference solutions, parent repositories,
+sibling workspaces, and arbitrary network access. Harness eligibility is
+recorded separately for each class. The public characterization suite can be
+checked locally with `python -m benchmark.public_characterization.runner
+check`; it does not run Benchmark V2.
+
 ## Installation
 
 The supported user-level installation remains self-contained via pipx:
