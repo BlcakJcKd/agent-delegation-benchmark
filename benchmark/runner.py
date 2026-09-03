@@ -21,6 +21,7 @@ from .freeze import verify_lock
 from .preflight import display_preflight, parse_models, run_preflight
 from .tasks import TASKS, repository_root, task_by_id
 from .tiers import TIERS, Tier, tier_by_id
+from .v2.telemetry import parse_trace
 
 
 DISPLAY_NAMES = {"codex": "Codex", "claude": "Claude", "agy": "Antigravity"}
@@ -390,6 +391,7 @@ def execute(
                 "attempt": 1,
                 "retry": False,
                 "fallback": None,
+                "request_telemetry": [item.json() for item in parse_trace(stdout)],
             }
             _write_json(result_dir / "execution.json", record)
             assessment = evaluate(task_id, workspace, root)

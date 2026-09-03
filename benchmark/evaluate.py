@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,37 @@ def _result(score: float, maximum: float, notes: list[str]) -> dict[str, Any]:
     return {"score": score, "maximum": maximum, "notes": notes}
 
 
+def _diagnostic_plot_score(workspace: Path) -> dict[str, Any]:
+    """Evaluate the artifact directly, without unittest discovery.
+
+    The old path coupled an artifact task to a candidate ``tests`` package;
+    namespace-package/disposable-workspace execution made that evaluator fail
+    before scoring.  Artifact validity is now checked from bytes and JSON.
+    """
+    image, summary = workspace / "diagnostic.png", workspace / "summary.json"
+    notes: list[str] = []
+    score = 0.0
+    raw = image.read_bytes() if image.is_file() else b""
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        score += 1; notes.append("valid PNG signature")
+        if len(raw) >= 24 and raw[12:16] == b"IHDR":
+            width, height = struct.unpack(">II", raw[16:24])
+            if width > 0 and height > 0:
+                notes.append(f"PNG dimensions {width}x{height}")
+    else:
+        notes.append("diagnostic.png missing or invalid")
+    if summary.is_file():
+        try:
+            data = _json(summary)
+            if data.get("outlier_sample") == "S08": score += 1
+            if data.get("outlier_reason") == "low_library_size": score += 1
+        except (OSError, ValueError, TypeError) as exc:
+            notes.append(f"summary.json invalid: {exc}")
+    else:
+        notes.append("summary.json missing")
+    return _result(score, 3, notes)
+
+
 def evaluate(task_id: str, workspace: Path, root: Path) -> dict[str, Any]:
     if task_id == "research_python":
         path = workspace / "answer.json"
@@ -28,19 +60,7 @@ def evaluate(task_id: str, workspace: Path, root: Path) -> dict[str, Any]:
         score = sum(answer.get(k) == v for k, v in expected.items())
         return _result(float(score), 5, ["exact fields matched: " + str(score) + "/5"])
     if task_id == "diagnostic_plot":
-        image, summary = workspace / "diagnostic.png", workspace / "summary.json"
-        notes: list[str] = []
-        score = 0.0
-        if image.read_bytes().startswith(b"\x89PNG") if image.exists() else False:
-            score += 1; notes.append("valid PNG signature")
-        else: notes.append("diagnostic.png missing or invalid")
-        if summary.exists():
-            try:
-                data = _json(summary)
-                if data.get("outlier_sample") == "S08": score += 1
-                if data.get("outlier_reason") == "low_library_size": score += 1
-            except Exception: notes.append("summary.json invalid")
-        return _result(score, 3, notes)
+        return _diagnostic_plot_score(workspace)
     if task_id == "debug_package":
         # Evaluation never writes bytecode or other artifacts into the contestant output.
         with tempfile.TemporaryDirectory(prefix="benchmark-eval-") as temporary:
