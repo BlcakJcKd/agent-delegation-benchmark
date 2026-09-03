@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS hardware_profiles(id INTEGER PRIMARY KEY, name TEXT N
 CREATE TABLE IF NOT EXISTS profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, default_identity_key TEXT, permitted_candidates_json TEXT, required_capabilities_json TEXT, writable INTEGER, reasoning_policy TEXT, default_reasoning TEXT, enabled INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS benchmark_suites(id INTEGER PRIMARY KEY, name TEXT NOT NULL, layer TEXT NOT NULL, version TEXT NOT NULL, evaluation_class TEXT NOT NULL DEFAULT 'unknown', git_sha TEXT, metadata_json TEXT, UNIQUE(name,version,git_sha));
 CREATE TABLE IF NOT EXISTS benchmark_suite_corrections(id INTEGER PRIMARY KEY, suite_id INTEGER NOT NULL REFERENCES benchmark_suites(id), originally_recorded_git_sha TEXT, corrected_git_sha TEXT NOT NULL, corrected_at TEXT NOT NULL, reason TEXT NOT NULL, evidence_json TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS benchmark_tasks(id INTEGER PRIMARY KEY, suite_id INTEGER REFERENCES benchmark_suites(id), family TEXT NOT NULL, task_id TEXT NOT NULL, variant_seed TEXT, content_hash TEXT, prompt_hash TEXT, evaluator_hash TEXT, UNIQUE(suite_id,task_id,variant_seed));
+CREATE TABLE IF NOT EXISTS benchmark_tasks(id INTEGER PRIMARY KEY, suite_id INTEGER REFERENCES benchmark_suites(id), family TEXT NOT NULL, task_id TEXT NOT NULL, variant_seed TEXT, content_hash TEXT, prompt_hash TEXT, evaluator_hash TEXT, baseline_score REAL, baseline_check_vector_json TEXT, task_spec_hash TEXT, allowed_edit_manifest_hash TEXT, reference_validation_passed INTEGER, reference_validation_at TEXT, UNIQUE(suite_id,task_id,variant_seed));
 CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT, profile TEXT, requested_json TEXT NOT NULL, resolved_json TEXT, resolution_reason TEXT, provider TEXT, identity_key TEXT, harness_id INTEGER, engine_id INTEGER, hardware_id INTEGER, billing_mode TEXT, evaluation_class TEXT NOT NULL DEFAULT 'unknown', raw_evidence_path TEXT, raw_evidence_sha256 TEXT, status TEXT);
-CREATE TABLE IF NOT EXISTS task_attempts(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), task_id INTEGER REFERENCES benchmark_tasks(id), score REAL, public_score REAL, hidden_score REAL, invariant_score REAL, api_score REAL, scope_compliant INTEGER, wall_seconds REAL, metadata_json TEXT);
+CREATE TABLE IF NOT EXISTS task_attempts(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), task_id INTEGER REFERENCES benchmark_tasks(id), score REAL, public_score REAL, hidden_score REAL, invariant_score REAL, api_score REAL, scope_compliant INTEGER, wall_seconds REAL, baseline_score REAL, baseline_check_vector_json TEXT, final_check_vector_json TEXT, delta_score REAL, normalized_improvement REAL, evaluator_tampering INTEGER, prohibited_changed_files_json TEXT, metadata_json TEXT);
 CREATE TABLE IF NOT EXISTS request_metrics(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), ordinal INTEGER, started_at TEXT, ended_at TEXT, model TEXT, provider TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, ttft_seconds REAL, wall_seconds REAL, stop_reason TEXT, metadata_json TEXT);
 CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), request_id INTEGER REFERENCES request_metrics(id), ordinal INTEGER, tool_name TEXT, validity TEXT, error TEXT, recovered INTEGER, alternate_tool INTEGER, metadata_json TEXT);
 CREATE TABLE IF NOT EXISTS pricing_snapshots(id INTEGER PRIMARY KEY, provider TEXT NOT NULL, effective_at TEXT NOT NULL, currency TEXT, prices_json TEXT NOT NULL, source TEXT, UNIQUE(provider,effective_at,prices_json));
@@ -70,6 +70,25 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "harnesses", "observed_at", "TEXT")
     _ensure_column(conn, "benchmark_suites", "evaluation_class", "TEXT NOT NULL DEFAULT 'unknown'")
     _ensure_column(conn, "runs", "evaluation_class", "TEXT NOT NULL DEFAULT 'unknown'")
+    for column, definition in (
+        ("baseline_score", "REAL"),
+        ("baseline_check_vector_json", "TEXT"),
+        ("task_spec_hash", "TEXT"),
+        ("allowed_edit_manifest_hash", "TEXT"),
+        ("reference_validation_passed", "INTEGER"),
+        ("reference_validation_at", "TEXT"),
+    ):
+        _ensure_column(conn, "benchmark_tasks", column, definition)
+    for column, definition in (
+        ("baseline_score", "REAL"),
+        ("baseline_check_vector_json", "TEXT"),
+        ("final_check_vector_json", "TEXT"),
+        ("delta_score", "REAL"),
+        ("normalized_improvement", "REAL"),
+        ("evaluator_tampering", "INTEGER"),
+        ("prohibited_changed_files_json", "TEXT"),
+    ):
+        _ensure_column(conn, "task_attempts", column, definition)
     conn.execute("UPDATE benchmark_suites SET evaluation_class='unknown' WHERE evaluation_class IS NULL OR evaluation_class='' ")
     conn.execute("UPDATE runs SET evaluation_class='unknown' WHERE evaluation_class IS NULL OR evaluation_class='' ")
 
@@ -180,14 +199,14 @@ def record_benchmark_suite_correction(
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
-def record_benchmark_task(conn: sqlite3.Connection, suite_id: int, *, family: str, task_id: str, variant_seed: str, content_hash: str, prompt_hash: str, evaluator_hash: str) -> int:
-    conn.execute("INSERT OR IGNORE INTO benchmark_tasks(suite_id,family,task_id,variant_seed,content_hash,prompt_hash,evaluator_hash) VALUES(?,?,?,?,?,?,?)", (suite_id, family, task_id, variant_seed, content_hash, prompt_hash, evaluator_hash))
+def record_benchmark_task(conn: sqlite3.Connection, suite_id: int, *, family: str, task_id: str, variant_seed: str, content_hash: str, prompt_hash: str, evaluator_hash: str, baseline_score: float | None = None, baseline_check_vector: list[bool] | None = None, task_spec_hash: str | None = None, allowed_edit_manifest_hash: str | None = None, reference_validation_passed: bool | None = None, reference_validation_at: str | None = None) -> int:
+    conn.execute("INSERT OR IGNORE INTO benchmark_tasks(suite_id,family,task_id,variant_seed,content_hash,prompt_hash,evaluator_hash,baseline_score,baseline_check_vector_json,task_spec_hash,allowed_edit_manifest_hash,reference_validation_passed,reference_validation_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (suite_id, family, task_id, variant_seed, content_hash, prompt_hash, evaluator_hash, baseline_score, json.dumps(baseline_check_vector) if baseline_check_vector is not None else None, task_spec_hash, allowed_edit_manifest_hash, None if reference_validation_passed is None else int(reference_validation_passed), reference_validation_at))
     conn.commit()
     return int(conn.execute("SELECT id FROM benchmark_tasks WHERE suite_id=? AND task_id=? AND variant_seed=?", (suite_id, task_id, variant_seed)).fetchone()[0])
 
 
-def record_task_attempt(conn: sqlite3.Connection, run_id: str, task_id: int, *, score: float | None = None, public_score: float | None = None, hidden_score: float | None = None, invariant_score: float | None = None, api_score: float | None = None, scope_compliant: bool | None = None, wall_seconds: float | None = None, metadata: dict[str, Any] | None = None) -> int:
-    conn.execute("INSERT INTO task_attempts(run_id,task_id,score,public_score,hidden_score,invariant_score,api_score,scope_compliant,wall_seconds,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, task_id, score, public_score, hidden_score, invariant_score, api_score, None if scope_compliant is None else int(scope_compliant), wall_seconds, json.dumps(metadata or {}, sort_keys=True)))
+def record_task_attempt(conn: sqlite3.Connection, run_id: str, task_id: int, *, score: float | None = None, public_score: float | None = None, hidden_score: float | None = None, invariant_score: float | None = None, api_score: float | None = None, scope_compliant: bool | None = None, wall_seconds: float | None = None, baseline_score: float | None = None, baseline_check_vector: list[bool] | None = None, final_check_vector: list[bool] | None = None, delta_score: float | None = None, normalized_improvement: float | None = None, evaluator_tampering: bool | None = None, prohibited_changed_files: list[str] | None = None, metadata: dict[str, Any] | None = None) -> int:
+    conn.execute("INSERT INTO task_attempts(run_id,task_id,score,public_score,hidden_score,invariant_score,api_score,scope_compliant,wall_seconds,baseline_score,baseline_check_vector_json,final_check_vector_json,delta_score,normalized_improvement,evaluator_tampering,prohibited_changed_files_json,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, task_id, score, public_score, hidden_score, invariant_score, api_score, None if scope_compliant is None else int(scope_compliant), wall_seconds, baseline_score, json.dumps(baseline_check_vector) if baseline_check_vector is not None else None, json.dumps(final_check_vector) if final_check_vector is not None else None, delta_score, normalized_improvement, None if evaluator_tampering is None else int(evaluator_tampering), json.dumps(prohibited_changed_files or [], sort_keys=True) if prohibited_changed_files is not None else None, json.dumps(metadata or {}, sort_keys=True)))
     conn.commit()
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
