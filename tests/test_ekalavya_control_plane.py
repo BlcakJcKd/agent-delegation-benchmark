@@ -39,6 +39,14 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
         result = resolve(RunIntent("local-coder", reasoning="high"), {"default_identity_key": c.identity_key}, [entry])
         self.assertEqual(result.state, "invalid-reasoning")
 
+    def test_explicit_previous_model_is_selectable_without_changing_default(self):
+        current = CandidateIdentity("gemini", "flash", "gemini-3.7-flash-medium", capabilities={"reasoning_values": ["medium"]})
+        previous = CandidateIdentity("gemini", "flash", "gemini-3.6-flash-medium", capabilities={"reasoning_values": ["medium"]})
+        profile = {"default_identity_key": current.identity_key, "permitted_candidates": [current.identity_key, previous.identity_key], "reasoning_policy": "overrideable"}
+        result = resolve(RunIntent("flash", provider="gemini", model=previous.provider_model_id, reasoning="medium"), profile, [dict(current.as_dict(), identity_key=current.identity_key, lifecycle="current"), dict(previous.as_dict(), identity_key=previous.identity_key, lifecycle="previous")])
+        self.assertEqual(result.state, "resolved")
+        self.assertEqual(result.candidate.provider_model_id, previous.provider_model_id)
+
     def test_ledger_schema_and_price_snapshot_immutability(self):
         with tempfile.TemporaryDirectory() as d:
             db = Path(d) / "ledger.sqlite3"; conn = connect(db)

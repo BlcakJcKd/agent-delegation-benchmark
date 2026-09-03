@@ -20,11 +20,13 @@ def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[st
     filters = {"provider": intent.provider, "family": intent.family, "provider_model_id": intent.model}
     filtered = [c for c in eligible if all(v is None or c.get(k) == v for k, v in filters.items())]
     alternatives = tuple({"identity_key": c.get("identity_key"), "provider": c.get("provider"), "family": c.get("family"), "provider_model_id": c.get("provider_model_id"), "lifecycle": c.get("lifecycle")} for c in eligible)
+    explicit_candidate = bool(intent.model)
     if default_key and not any(c.get("identity_key") == default_key for c in filtered):
-        # Explicit dimensions may narrow the configured default; no replacement is selected.
         if not filtered:
             return Resolution(intent, None, reason="configured profile default does not satisfy requested constraints", state="unavailable", alternatives=alternatives)
     chosen = next((c for c in filtered if c.get("identity_key") == default_key), None) if default_key else (filtered[0] if len(filtered) == 1 else None)
+    if chosen is None and explicit_candidate and len(filtered) == 1:
+        chosen = filtered[0]
     if chosen is None:
         return Resolution(intent, None, reason="profile has no unambiguous configured candidate; choose one explicitly", state="unavailable", alternatives=alternatives)
     primary = (intent.primary or "").strip().lower()
