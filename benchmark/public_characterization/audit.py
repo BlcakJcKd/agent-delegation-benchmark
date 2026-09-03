@@ -135,6 +135,12 @@ AGY 1.1.25 produced one parsed outer session/result record per attempt. This is 
     for key, group in sorted(grouped.items()):
         sums = {field: sum(row[field] or 0 for row in group) for field in ("input_tokens", "output_tokens", "cache_read_tokens", "reasoning_tokens")}
         token_lines.append(f"| {key[0]} | {key[1]} | {sums['input_tokens']} | {sums['output_tokens']} | {sums['cache_read_tokens']} | {sums['reasoning_tokens']} | {sums['input_tokens'] + sums['output_tokens']} |")
+    token_lines += ["", "## Per-attempt distribution", "", "| Model | Reasoning | Task | Input | Output | Cache read | Reasoning | Input+output |", "|---|---|---|---:|---:|---:|---:|---:|"]
+    for row in rows:
+        input_tokens = row["input_tokens"]
+        output_tokens = row["output_tokens"]
+        total_tokens = input_tokens + output_tokens if input_tokens is not None and output_tokens is not None else None
+        token_lines.append(f"| {row['model']} | {row['reasoning']} | {row['task']} | {input_tokens if input_tokens is not None else 'null'} | {output_tokens if output_tokens is not None else 'null'} | {row['cache_read_tokens'] if row['cache_read_tokens'] is not None else 'null'} | {row['reasoning_tokens'] if row['reasoning_tokens'] is not None else 'null'} | {total_tokens if total_tokens is not None else 'null'} |")
     token_lines += ["", "The cache-read values exceed input values and have no verified billing/session definition in retained evidence. No duplicated event stream was retained; duplicate accounting therefore cannot be ruled out beyond the single parsed record per attempt."]
     (state / "token-semantics.md").write_text("\n".join(token_lines) + "\n")
 
