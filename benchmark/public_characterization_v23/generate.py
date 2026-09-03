@@ -99,6 +99,25 @@ def _make(seed: int) -> TaskInstance:
         class UnsupportedFeature(InventoryError):
             pass
         """,
+        "inventory/snapshot.py": """
+        from .errors import UnsupportedFeature
+
+        class SnapshotRegistry:
+            def __init__(self):
+                self._snapshots = {}
+
+            def capture(self, name, version, records):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def names(self):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def resolve(self, snapshot):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def restore(self, token):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+        """,
         "inventory/model.py": """
         from dataclasses import dataclass
         from typing import Any
@@ -130,33 +149,6 @@ def _make(seed: int) -> TaskInstance:
 
         def normalize_tags(values):
             return tuple(sorted({str(value).strip().casefold() for value in values if str(value).strip()}))
-        """,
-        "inventory/query.py": """
-        from dataclasses import dataclass
-        from .normalization import normalize_category, normalize_name
-
-        @dataclass(frozen=True)
-        class ProductQuery:
-            name: str | None = None
-            category: str | None = None
-            required_tags: tuple[str, ...] = ()
-
-            @classmethod
-            def create(cls, name=None, category=None, required_tags=()):
-                return cls(None if name is None else normalize_name(name), normalize_category(category), tuple(sorted(str(tag).strip().casefold() for tag in required_tags)))
-
-        def matches(product, query: ProductQuery):
-            if query.name is not None and normalize_name(product.name) != query.name:
-                return False
-            if query.category is not None and normalize_category(product.category) != query.category:
-                return False
-            return set(query.required_tags).issubset(set(product.tags))
-
-        def select(products, query: ProductQuery):
-            return [product for product in products if matches(product, query)]
-
-        def stable_identifiers(products):
-            return tuple(sorted(product.identifier for product in products))
         """,
         "inventory/audit.py": """
         from .normalization import normalize_name
@@ -254,6 +246,7 @@ def _make(seed: int) -> TaskInstance:
         """,
         "inventory/codec.py": """
         import json
+        from .errors import UnsupportedFeature
         from .model import Product
 
         def encode_records(records, version=0):
@@ -268,6 +261,12 @@ def _make(seed: int) -> TaskInstance:
 
         def decode_report(payload):
             return json.loads(payload)
+
+        def encode_snapshot(token):
+            raise UnsupportedFeature("named snapshots are not in the old contract")
+
+        def decode_snapshot(payload):
+            raise UnsupportedFeature("named snapshots are not in the old contract")
         """,
         "inventory/cache.py": """
         from .model import clone_products
@@ -296,9 +295,22 @@ def _make(seed: int) -> TaskInstance:
                 return {\"hits\": self.hits, \"misses\": self.misses, \"entries\": len(self._entries)}
         """,
         "inventory/catalog.py": """
+        from dataclasses import dataclass
         from .model import clone_products
         from .normalization import normalize_category, normalize_name
-        from .query import ProductQuery, select
+
+        @dataclass(frozen=True)
+        class ProductQuery:
+            name: str | None = None
+            category: str | None = None
+            required_tags: tuple[str, ...] = ()
+
+            @classmethod
+            def create(cls, name=None, category=None, required_tags=()):
+                return cls(None if name is None else normalize_name(name), normalize_category(category), tuple(sorted(str(tag).strip().casefold() for tag in required_tags)))
+
+        def select(products, query):
+            return [product for product in products if (query.name is None or normalize_name(product.name) == query.name) and (query.category is None or normalize_category(product.category) == query.category) and set(query.required_tags).issubset(set(product.tags))]
 
         class ProductCatalog:
             def __init__(self, products):
@@ -358,21 +370,27 @@ def _make(seed: int) -> TaskInstance:
 
         def render_report(report):
             return encode_report(report)
+
+        def build_snapshot_report(products, *, version, snapshot, label="snapshot"):
+            raise NotImplementedError("snapshot reports are a new feature")
         """,
         "inventory/service.py": """
         from .aggregate import summarize
         from .cache import VersionedProductCache
         from .catalog import ProductCatalog
-        from .codec import encode_records
+        from .codec import decode_snapshot, encode_records, encode_snapshot
         from .errors import UnsupportedFeature
         from .policy import filter_category, order_products, validate_report_request
-        from .report import build_report
+        from .report import build_report, build_snapshot_report
+        from .model import Product
         from .repository import InventoryRepository
+        from .snapshot import SnapshotRegistry
 
         class InventoryService:
             def __init__(self, records):
                 self.repository = InventoryRepository(records)
                 self.cache = VersionedProductCache()
+                self.snapshots = SnapshotRegistry()
 
             def _catalog(self):
                 return ProductCatalog(self.cache.get(\"current\", self.repository.version, self.repository.all))
@@ -407,22 +425,29 @@ def _make(seed: int) -> TaskInstance:
                 return self.repository.metadata()
 
             def create_snapshot(self, name):
-                raise UnsupportedFeature(\"named snapshots are not in the old contract\")
+                return self.snapshots.capture(name, self.repository.version, self.repository.export_records())
 
             def list_snapshot_names(self):
-                raise UnsupportedFeature(\"named snapshots are not in the old contract\")
+                return self.snapshots.names()
 
             def list_products_at(self, snapshot, category=None):
-                raise UnsupportedFeature(\"named snapshots are not in the old contract\")
+                token = self.snapshots.resolve(snapshot)
+                products = [Product.from_record(item) for item in token[\"records\"]]
+                validate_report_request(category)
+                return order_products(filter_category(ProductCatalog(products).all(), category))
 
             def export_snapshot(self, snapshot):
-                raise UnsupportedFeature(\"named snapshots are not in the old contract\")
+                return encode_snapshot(self.snapshots.resolve(snapshot))
 
             def restore_snapshot(self, payload):
-                raise UnsupportedFeature(\"named snapshots are not in the old contract\")
+                return self.snapshots.restore(decode_snapshot(payload))
 
             def snapshot_report(self, snapshot, category=None):
-                raise UnsupportedFeature(\"named snapshots are not in the old contract\")
+                token = self.snapshots.resolve(snapshot)
+                validate_report_request(category)
+                products = [Product.from_record(item) for item in token[\"records\"]]
+                products = order_products(filter_category(ProductCatalog(products).all(), category))
+                return build_snapshot_report(products, version=token[\"version\"], snapshot=token[\"name\"])
         """,
         "inventory/api.py": """
         from .service import InventoryService
