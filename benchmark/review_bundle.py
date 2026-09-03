@@ -18,12 +18,14 @@ ROOT_ARTIFACTS = (
     "REPORT.md", "run-summary.json", "discovery.json", "plot-metadata.json",
     "AUDIT_REPORT.md", "CORRECTED_REPORT.md", "telemetry-semantics.md",
     "token-semantics.md", "task-check-matrix.md", "task-check-matrix.csv",
+    "VALIDATION_REPORT.md",
 )
 OPTIONAL_PLOTS = (
     "reasoning-correctness.png", "reasoning-wall.png", "score-vs-wall.png",
-    "tokens-vs-correctness.png",
+    "tokens-vs-correctness.png", "baseline-vs-final.png", "delta-by-configuration.png",
+    "final-vs-wall.png", "final-vs-tokens.png",
 )
-OPTIONAL_DIRS = ("provenance",)
+OPTIONAL_DIRS = ("provenance", "validation", "task-specifications", "verifier-contracts", "edit-scopes")
 REQUESTED_SEMANTICS = {
     "request_metric_semantics", "tool_event_telemetry", "token_metric_semantics",
 }
@@ -99,6 +101,30 @@ def _attempt_counts(state: Path) -> dict[str, int]:
     return {"attempts": attempts, "completed": completed, "failed": attempts - completed - timeouts, "timeouts": timeouts}
 
 
+def _evaluation_class(state: Path, experiment: str) -> str:
+    summary = state / "run-summary.json"
+    if summary.is_file():
+        try:
+            value = json.loads(summary.read_text()).get("evaluation_class")
+            if value:
+                return str(value)
+        except (OSError, ValueError):
+            pass
+    return "public_characterization" if experiment.startswith("public-characterization-") else "unknown"
+
+
+def _experiment_git_identity(state: Path) -> str | None:
+    summary = state / "run-summary.json"
+    if summary.is_file():
+        try:
+            value = json.loads(summary.read_text()).get("suite_git_sha")
+            if value:
+                return str(value)
+        except (OSError, ValueError):
+            pass
+    return None
+
+
 def create_review_bundle(
     experiment: str,
     *,
@@ -156,9 +182,9 @@ def create_review_bundle(
             correction = {"status": "malformed correction summary"}
     manifest = {
         "experiment": experiment,
-        "evaluation_class": "public_characterization" if experiment == "public-characterization-v1" else "unknown",
+        "evaluation_class": _evaluation_class(state, experiment),
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "experiment_code_git_identity": (correction or {}).get("corrected_suite_sha") or _git_identity(),
+        "experiment_code_git_identity": (correction or {}).get("corrected_suite_sha") or _experiment_git_identity(state) or _git_identity(),
         "report_generation_code_identity": _git_identity(),
         **counts,
         "included_files": payload_files + ["MANIFEST.md", "manifest.json"],
