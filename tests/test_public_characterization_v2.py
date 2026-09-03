@@ -7,7 +7,7 @@ from unittest.mock import patch
 from benchmark.public_characterization_v2 import BASELINE_TARGET, FAMILIES, PILOT_CONFIGURATIONS
 from benchmark.public_characterization_v2.evaluate import evaluate
 from benchmark.public_characterization_v2.generate import make_instance, materialize, workspace_digest
-from benchmark.public_characterization_v2.runner import derive_scores, prohibited_files, validate_preflight
+from benchmark.public_characterization_v2.runner import _visible_verify, changed_files, derive_scores, prohibited_files, validate_preflight
 from benchmark.review_bundle import create_review_bundle
 
 
@@ -19,9 +19,12 @@ class PublicCharacterizationV2Tests(unittest.TestCase):
                 workspace = Path(temporary) / "workspace"
                 materialize(instance, workspace)
                 controller = evaluate(instance, workspace)
+                visible = _visible_verify(instance, workspace)
                 self.assertGreaterEqual(controller["score"], BASELINE_TARGET[0])
                 self.assertLessEqual(controller["score"], BASELINE_TARGET[1])
                 self.assertEqual(len(controller["check_vector"]), 8)
+                self.assertTrue(visible["ok"])
+                self.assertEqual(visible["check_vector"], controller["check_vector"])
 
     def test_score_derivatives_preserve_absolute_and_conditional_metrics(self):
         self.assertEqual(derive_scores(25.0, 75.0), {"delta_score": 50.0, "normalized_improvement": 2 / 3})
@@ -31,6 +34,13 @@ class PublicCharacterizationV2Tests(unittest.TestCase):
         scope = {"editable": ["app/**/*.py"], "immutable": ["tests/**"]}
         self.assertEqual(prohibited_files(["app/store.py", "__pycache__/store.pyc", ".pytest_cache/x"], scope), [])
         self.assertEqual(prohibited_files(["tests/test_contract.py"], scope), ["tests/test_contract.py"])
+
+    def test_changed_files_preserve_tampering_signal(self):
+        before = {"app/store.py": "a", "tests/test_contract.py": "b"}
+        after = {"app/store.py": "c", "tests/test_contract.py": "d", "__pycache__/x.pyc": "e"}
+        changed = changed_files(before, after)
+        self.assertEqual(changed, ["__pycache__/x.pyc", "app/store.py", "tests/test_contract.py"])
+        self.assertEqual(prohibited_files(changed, {"editable": ["app/**/*.py"]}), ["tests/test_contract.py"])
 
     def test_v2_is_fixed_to_three_pilot_configurations(self):
         self.assertEqual(PILOT_CONFIGURATIONS, (("gemini-3.7-flash-low", "low"), ("gemini-3.7-flash-medium", "medium"), ("gemini-3.8-flash-low", "low")))

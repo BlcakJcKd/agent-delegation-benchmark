@@ -157,7 +157,6 @@ def _p3(seed: int) -> TaskInstance:
 
 
 def _p4(seed: int) -> TaskInstance:
-    v = _variant(seed)
     return _make(
         "P4_compat_refactor", seed,
         "Refactor the compatibility package without breaking legacy APIs. Run `python verifier/verify.py`; all eight compatibility behaviors are independently scored.",

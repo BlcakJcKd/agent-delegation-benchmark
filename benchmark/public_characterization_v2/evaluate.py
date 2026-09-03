@@ -121,7 +121,7 @@ def _p4(root: Path, instance: Any) -> list[dict[str, Any]]:
     from compatpkg.new_api import service
     client = make_client("visible")
     try:
-        per_request = client.request("/x", timeout=instance.variant["threshold"])["timeout"] == instance.variant["threshold"]
+        per_request = client.request("/x", timeout=7)["timeout"] == 7
         default_timeout = client.request("/x")["timeout"] == 30
     except (AttributeError, TypeError, KeyError):
         per_request = default_timeout = False

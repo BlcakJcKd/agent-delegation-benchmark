@@ -45,8 +45,10 @@ SOURCE_PATHS = (
     "benchmark/public_characterization_v2/runner.py",
     "benchmark/v2/telemetry.py",
     "benchmark/adapters.py",
+    "benchmark/provenance.py",
     "ekalavya/ledger.py",
     "ekalavya/harness_registry.py",
+    "pyproject.toml",
 )
 
 
@@ -114,6 +116,7 @@ def _public_task_artifacts(instance: TaskInstance, root: Path) -> None:
     (root / "verifier-contracts" / instance.family).mkdir(parents=True, exist_ok=True)
     (root / "edit-scopes" / instance.family).mkdir(parents=True, exist_ok=True)
     (root / "task-specifications" / instance.family / "README.md").write_text(instance.files["README.md"])
+    (root / "task-specifications" / instance.family / "specification.json").write_text(json.dumps(instance.specification, indent=2, sort_keys=True) + "\n")
     (root / "verifier-contracts" / instance.family / "contract.py").write_text(instance.files["verifier/contract.py"])
     (root / "verifier-contracts" / instance.family / "verify.py").write_text(instance.files["verifier/verify.py"])
     (root / "edit-scopes" / instance.family / "allowed-edit-manifest.json").write_text(json.dumps(instance.edit_scope, indent=2, sort_keys=True) + "\n")
@@ -157,12 +160,31 @@ def validate_preflight(*, require_reference: bool = False, seed: int = SEED) -> 
             result["reference_validation"] = json.loads(reference_path.read_text())
         except ValueError as exc:
             result["reference_validation"] = {"passed": False, "error": str(exc)}
+    reference = result.get("reference_validation") or {}
+    reference_tasks = {item.get("family"): item for item in reference.get("tasks", []) if isinstance(item, dict)}
+    reference_identity_ok = (
+        bool(reference.get("passed"))
+        and bool(result.get("provenance"))
+        and reference.get("suite_git_sha") == result["provenance"].get("git_sha")
+        and reference.get("suite") == SUITE_NAME
+        and reference.get("version") == SUITE_VERSION
+        and reference.get("seed") == seed
+        and reference.get("temporary_reference_repair_deleted") is True
+        and reference.get("gold_source_retained") is False
+        and all(
+            reference_tasks.get(item["family"], {}).get("score") == 100.0
+            and reference_tasks.get(item["family"], {}).get("check_vector") == [True] * 8
+            for item in result["tasks"]
+        )
+    )
+    for item in result["tasks"]:
+        item["reference_validation_passed"] = reference_identity_ok and reference_tasks.get(item["family"], {}).get("score") == 100.0
     result["gates"] = {
         "provenance": bool(result.get("provenance")),
         "headroom": all(item["headroom_passed"] for item in result["tasks"]),
         "visible_controller_parity": all(item["visible_controller_agree"] for item in result["tasks"]),
         "deterministic_hashes": all(item["deterministic_hash_passed"] for item in result["tasks"]),
-        "reference_validation": bool(result.get("reference_validation", {}).get("passed")) if require_reference else "not_required",
+        "reference_validation": reference_identity_ok if require_reference else "not_required",
     }
     result["ok"] = all(value is True for value in result["gates"].values())
     validation_dir = state_root() / "validation"; validation_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -252,6 +274,8 @@ def pilot(seed: int = SEED) -> dict[str, Any]:
     agy = next(item for item in registry if item["name"] == "agy"); agy_version = agy.get("observed_version") or agy["version"]
     (root / "discovery.json").write_text(json.dumps({"experiment": SUITE_NAME, "evaluation_class": EVALUATION_CLASS, "client": "agy", "client_version": agy_version, "models": [{"provider_model_id": model, "reasoning": reasoning} for model, reasoning in PILOT_CONFIGURATIONS]}, indent=2, sort_keys=True) + "\n")
     harness_id = record_harness(conn, "agy", version=agy_version, adapter_version="benchmark.adapters.AntigravityAdapter", transport="agy", capabilities=agy["capabilities"], telemetry=agy["telemetry"], eligibility=agy["eligibility"], evidence_label="public_characterization_non_adversarial", observed_at=now())
+    for instance in instances:
+        _public_task_artifacts(instance, root)
     suite_id, task_ids = _record_suite(conn, instances, provenance, baselines, reference_at)
     attempts = []
     for model_id, reasoning in PILOT_CONFIGURATIONS:
