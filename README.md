@@ -64,7 +64,7 @@ profile default. Persistent provider/model configuration remains user-owned.
 
 ## Safety and evidence
 
-External compatibility wrappers retain closed stdin, scoped workspaces,
+External execution adapters retain closed stdin, scoped workspaces,
 symlink/parent-escape checks, recursion protection via
 `AGENT_DELEGATION_DEPTH`, process-group and timeout semantics, and atomic
 private response retention. Writable benchmark runs use disposable copies and
