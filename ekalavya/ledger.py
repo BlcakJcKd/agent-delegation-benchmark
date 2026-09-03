@@ -148,3 +148,26 @@ def import_legacy_state(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
         counts["files"] += 1; counts["records"] += records
     conn.commit()
     return counts
+
+
+def import_execution_runs(conn: sqlite3.Connection, root: Path) -> int:
+    """Backfill structured runs from already-indexed, whitelisted metadata."""
+    imported = 0
+    if not root.is_dir():
+        return imported
+    for path in sorted(root.rglob("execution.json")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        data = path.read_bytes(); digest = hashlib.sha256(data).hexdigest(); key = str(path.resolve())
+        run_id = "legacy:" + hashlib.sha256((key + "\0" + digest).encode()).hexdigest()
+        safe = {field: raw.get(field) for field in ("delegate", "provider", "requested_model", "requested_effort", "started_at", "ended_at", "exit_code", "response_status", "response_recorded", "response_sha256")}
+        cursor = conn.execute("INSERT OR IGNORE INTO runs(run_id,started_at,ended_at,profile,requested_json,resolved_json,provider,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, raw.get("started_at") or datetime.now(timezone.utc).isoformat(), raw.get("ended_at"), raw.get("delegate"), json.dumps(safe, sort_keys=True), json.dumps({"provider_model_id": raw.get("requested_model"), "provider": raw.get("provider")}, sort_keys=True), raw.get("provider"), key, digest, "imported"))
+        imported += int(cursor.rowcount == 1)
+    conn.commit()
+    return imported
