@@ -1,4 +1,5 @@
 import json
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +8,7 @@ from benchmark.public_characterization_v23 import CALIBRATION_SEED, EVALUATION_S
 from benchmark.public_characterization_v23.evaluate import evaluate
 from benchmark.public_characterization_v23.generate import make_instance, materialize, workspace_digest
 from benchmark.public_characterization_v23.gold_accessibility import audit_tracked_gold_accessibility
-from benchmark.public_characterization_v23.runner import FEATURE_CLUSTERS, _calibration_useful, _sloc_and_graph, prohibited_files
+from benchmark.public_characterization_v23.runner import FEATURE_CLUSTERS, _calibration_useful, _sloc_and_graph, pilot, prohibited_files
 from benchmark.review_bundle import create_review_bundle
 
 
@@ -65,6 +66,12 @@ class PublicCharacterizationV23Tests(unittest.TestCase):
         self.assertFalse(_calibration_useful([{**base, "final_score": 100.0}]))
         self.assertFalse(_calibration_useful([{**base, "final_score": 0.0}]))
         self.assertTrue(_calibration_useful([{**base, "final_score": 62.5}]))
+
+    def test_pilot_is_calibration_only_until_separate_authorization(self):
+        source = inspect.getsource(pilot)
+        self.assertIn('"comparative_authorized": False', source)
+        self.assertNotIn("eval_gate", source)
+        self.assertNotIn("for model, reasoning in COMPARISON_CONFIGURATIONS", source)
 
     def test_gold_accessibility_has_no_tracked_repair_material(self):
         result = audit_tracked_gold_accessibility(Path(__file__).resolve().parents[1])
