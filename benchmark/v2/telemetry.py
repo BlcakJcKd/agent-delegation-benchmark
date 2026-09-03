@@ -21,6 +21,7 @@ class RequestTelemetry:
     provider: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    reasoning_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_write_tokens: int | None = None
     ttft_seconds: float | None = None
@@ -136,6 +137,11 @@ def parse_trace(trace: str | Iterable[dict[str, Any]]) -> list[RequestTelemetry]
         current.request_end = _first(event, "request_end", "ended_at", "endTime", "timestamp") or current.request_end
         current.input_tokens = current.input_tokens if current.input_tokens is not None else _number(usage, "prompt_tokens", "input_tokens")
         current.output_tokens = current.output_tokens if current.output_tokens is not None else _number(usage, "completion_tokens", "output_tokens")
+        if current.reasoning_tokens is None:
+            current.reasoning_tokens = _number(usage, "reasoning_tokens", "thinking_tokens")
+            details = usage.get("completion_tokens_details")
+            if current.reasoning_tokens is None and isinstance(details, dict):
+                current.reasoning_tokens = _number(details, "reasoning_tokens")
         current.cache_read_tokens = current.cache_read_tokens if current.cache_read_tokens is not None else _number(usage, "cache_read_input_tokens", "cache_read_tokens", "cacheRead")
         current.cache_write_tokens = current.cache_write_tokens if current.cache_write_tokens is not None else _number(usage, "cache_creation_input_tokens", "cache_write_tokens", "cacheWrite")
         wall = _number(event, "wall_seconds", "duration_seconds")

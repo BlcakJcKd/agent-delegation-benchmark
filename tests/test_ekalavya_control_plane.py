@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ekalavya.catalogue import add_candidate, promote, selectable
 from ekalavya.config import ensure_control_files, migrate_legacy_config
-from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_cost, record_price_snapshot, upsert_model
+from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, upsert_model
 from ekalavya.resolver import resolve
 from ekalavya.schema import CandidateIdentity, RunIntent
 
@@ -51,6 +51,18 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
             conn.execute("INSERT INTO runs(run_id,started_at,requested_json) VALUES('r','now','{}')")
             record_cost(conn, "r", billing_mode="subscription", cost_source="unavailable")
             row = conn.execute("SELECT provider_reported_cost,calculated_cost FROM cost_observations").fetchone()
+            self.assertIsNone(row[0]); self.assertIsNone(row[1])
+
+    def test_ledger_records_harness_request_reasoning_and_nullable_usage(self):
+        with tempfile.TemporaryDirectory() as d:
+            conn = connect(Path(d) / "ledger.sqlite3")
+            harness_id = record_harness(conn, "agy", version="1.1.25", adapter_version="adapter", transport="agy")
+            record_run(conn, "run", {"profile": "experiment"}, resolved={"provider_model_id": "gemini-3.8-flash-medium"}, harness_id=harness_id, provider="gemini", billing_mode="subscription")
+            request_id = record_request_metric(conn, "run", {"ordinal": 1, "model": "gemini-3.8-flash-medium", "reasoning_tokens": 12})
+            self.assertEqual(conn.execute("SELECT harness_id FROM runs WHERE run_id='run'").fetchone()[0], harness_id)
+            self.assertEqual(conn.execute("SELECT reasoning_tokens FROM request_metrics WHERE id=?", (request_id,)).fetchone()[0], 12)
+            record_cost(conn, "run", billing_mode="subscription", cost_source="unavailable")
+            row = conn.execute("SELECT provider_reported_cost,api_equivalent_cost FROM cost_observations WHERE run_id='run'").fetchone()
             self.assertIsNone(row[0]); self.assertIsNone(row[1])
 
     def test_config_migration_preserves_source_and_permissions_idempotently(self):

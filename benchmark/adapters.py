@@ -10,6 +10,7 @@ CLAUDE_TASK_ALLOWED_TOOLS: dict[str, tuple[str, ...]] = {
     "diagnostic_plot": ("Read", "Glob", "Grep", "Write", "Edit", "Bash(python *)", "Bash(python3 *)"),
     "debug_package": ("Read", "Glob", "Grep", "Write", "Edit", "Bash(python *)", "Bash(python3 *)", "Bash(pytest *)"),
 }
+AGY_REASONING_EFFORTS = ("low", "medium", "high")
 
 
 @dataclass(frozen=True)
@@ -107,17 +108,22 @@ class ClaudeAdapter(Adapter):
 @dataclass(frozen=True)
 class AntigravityAdapter(Adapter):
     name: str = field(default="agy", init=False)
+    reasoning_effort: str | None = None
 
     @property
     def executable(self) -> str:
         return "agy"
 
     def command(self, workspace: Path, prompt: str, output_dir: Path, task_id: str | None = None) -> list[str]:
+        if self.reasoning_effort is not None and self.reasoning_effort not in AGY_REASONING_EFFORTS:
+            raise ValueError(f"unsupported AGY reasoning effort {self.reasoning_effort!r}; supported: {list(AGY_REASONING_EFFORTS)!r}")
         command = [
-            "agy", "--output-format", "json", "--mode", "accept-edits", "--sandbox",
+            "agy", "--output-format", "json", "--mode", "accept-edits", "--sandbox", "--add-dir", str(workspace),
         ]
         if self.model:
             command.extend(["--model", self.model])
+        if self.reasoning_effort:
+            command.extend(["--effort", self.reasoning_effort])
         # agy's print flag is placed immediately before the final prompt.
         return [*command, "-p", prompt]
 
@@ -126,6 +132,7 @@ class AntigravityAdapter(Adapter):
             **super().describe(),
             "sandbox": "agy --sandbox",
             "permission_mode": "accept-edits (only non-bypass mode documented)",
+            "reasoning_effort": self.reasoning_effort,
             "output": "JSON requested",
         }
 
@@ -259,12 +266,13 @@ def configured_adapters(
     models: dict[str, str],
     codex_reasoning_effort: str | None = None,
     claude_reasoning_effort: str | None = None,
+    agy_reasoning_effort: str | None = None,
 ) -> dict[str, Adapter]:
     """Return fresh adapters with explicitly requested models."""
     return {
         "codex": CodexAdapter(model=models.get("codex"), reasoning_effort=codex_reasoning_effort),
         "claude": ClaudeAdapter(model=models.get("claude"), reasoning_effort=claude_reasoning_effort),
-        "agy": AntigravityAdapter(model=models.get("agy")),
+        "agy": AntigravityAdapter(model=models.get("agy"), reasoning_effort=agy_reasoning_effort),
         "deepseek-pro": DeepSeekAdapter(name="deepseek-pro", model=models.get("deepseek-pro")),
         "deepseek-flash": DeepSeekAdapter(name="deepseek-flash", model=models.get("deepseek-flash")),
         "minimax-m3": MiniMaxAdapter(model=models.get("minimax-m3")),

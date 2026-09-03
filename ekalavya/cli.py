@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import sys
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ from . import __version__
 from .catalogue import load_catalogue, save_catalogue
 from .config import config_root, migrate_legacy_config
 from .executor import execute
-from .ledger import connect, default_db_path, record_resolution, record_run
+from .ledger import connect, default_db_path, record_availability, record_resolution, record_run, upsert_model
 from .migrate import migrate_all
 from .resolver import resolve
 from .schema import CandidateIdentity, RunIntent
@@ -54,13 +55,21 @@ def cmd_models(args: argparse.Namespace) -> int:
         if not args.source:
             print("models refresh requires --source FILE (provider discovery output); no network discovery performed", file=sys.stderr); return 2
         incoming = json.loads(Path(args.source).read_text())
+        if not isinstance(incoming, list):
+            print("models refresh source must contain a JSON list", file=sys.stderr); return 2
         current = load_catalogue(path); known = {e.get("identity_key") for e in current}; added = 0
+        conn = connect(); observed_at = datetime.now(timezone.utc).isoformat()
         for raw in incoming:
-            item = dict(raw); item["lifecycle"] = "candidate"
+            item = dict(raw)
             if not item.get("identity_key"):
                 item["identity_key"] = CandidateIdentity(**{k: item.get(k) for k in CandidateIdentity.__dataclass_fields__}).identity_key
+            existing = next((e for e in current if e.get("identity_key") == item["identity_key"]), None)
+            item["lifecycle"] = existing.get("lifecycle", "candidate") if existing else "candidate"
             if item.get("identity_key") not in known:
                 current.append(item); known.add(item.get("identity_key")); added += 1
+            identity = CandidateIdentity(**{k: item.get(k) for k in CandidateIdentity.__dataclass_fields__})
+            model_id = upsert_model(conn, identity, lifecycle=item["lifecycle"], discovered_at=observed_at)
+            record_availability(conn, model_id, state="available", observed_at=observed_at, source=item.get("discovery_source", "provider discovery"), details={k: v for k, v in item.items() if k not in CandidateIdentity.__dataclass_fields__})
         save_catalogue(path, current); _json_or_text({"added_candidates": added, "auto_promoted": 0}, args.json); return 0
     _json_or_text(load_catalogue(path), args.json); return 0
 

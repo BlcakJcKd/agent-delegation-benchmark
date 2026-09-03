@@ -103,8 +103,15 @@ class AdapterArgvTests(unittest.TestCase):
         self.assertLess(command.index("--mode"), print_index)
         self.assertLess(command.index("--sandbox"), print_index)
         self.assertLess(command.index("--model"), print_index)
+        self.assertEqual(command[command.index("--add-dir") + 1], str(WORKSPACE))
         self.assertNotIn("--dangerously-skip-permissions", command)
         self.assertEqual(_adapter_command_problems(AntigravityAdapter(model="gemini-3.7-flash-high")), [])
+
+    def test_agy_reasoning_is_explicit_and_unsupported_values_fail_locally(self):
+        command = AntigravityAdapter(model="gemini-3.7-flash-high", reasoning_effort="high").command(WORKSPACE, PROMPT, RESULT)
+        self.assertEqual(command[command.index("--effort") + 1], "high")
+        with self.assertRaisesRegex(ValueError, "unsupported AGY reasoning effort"):
+            AntigravityAdapter(model="gemini-3.7-flash-high", reasoning_effort="xhigh").command(WORKSPACE, PROMPT, RESULT)
 
     def _assert_codex_transport_payg_shape(self, adapter, executable, model):
         command = adapter.command(WORKSPACE, PROMPT, RESULT)

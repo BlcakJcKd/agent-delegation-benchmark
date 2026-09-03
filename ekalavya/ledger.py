@@ -71,7 +71,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 def record_run(conn: sqlite3.Connection, run_id: str, requested: dict[str, Any], *, resolved: dict[str, Any] | None = None, status: str = "resolved", **fields: Any) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute("INSERT OR REPLACE INTO runs(run_id,started_at,ended_at,requested_json,resolved_json,resolution_reason,provider,identity_key,billing_mode,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, fields.pop("started_at", now), fields.pop("ended_at", None), json.dumps(requested, sort_keys=True), json.dumps(resolved, sort_keys=True) if resolved is not None else None, fields.pop("resolution_reason", None), fields.pop("provider", None), fields.pop("identity_key", None), fields.pop("billing_mode", None), fields.pop("raw_evidence_path", None), fields.pop("raw_evidence_sha256", None), status))
+    conn.execute("INSERT OR REPLACE INTO runs(run_id,started_at,ended_at,profile,requested_json,resolved_json,resolution_reason,provider,identity_key,harness_id,engine_id,hardware_id,billing_mode,raw_evidence_path,raw_evidence_sha256,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, fields.pop("started_at", now), fields.pop("ended_at", None), fields.pop("profile", requested.get("profile")), json.dumps(requested, sort_keys=True), json.dumps(resolved, sort_keys=True) if resolved is not None else None, fields.pop("resolution_reason", None), fields.pop("provider", None), fields.pop("identity_key", None), fields.pop("harness_id", None), fields.pop("engine_id", None), fields.pop("hardware_id", None), fields.pop("billing_mode", None), fields.pop("raw_evidence_path", None), fields.pop("raw_evidence_sha256", None), status))
     conn.commit()
 
 
@@ -92,7 +92,7 @@ def record_price_snapshot(conn: sqlite3.Connection, provider: str, effective_at:
     return int(row)
 
 
-def upsert_model(conn: sqlite3.Connection, identity: CandidateIdentity, *, lifecycle: str = "candidate") -> int:
+def upsert_model(conn: sqlite3.Connection, identity: CandidateIdentity, *, lifecycle: str = "candidate", discovered_at: str | None = None) -> int:
     """Insert a model identity without fabricating provider metadata."""
     if lifecycle not in {"candidate", "current", "previous", "retired", "rejected", "removed"}:
         raise ValueError(f"invalid lifecycle: {lifecycle}")
@@ -101,16 +101,62 @@ def upsert_model(conn: sqlite3.Connection, identity: CandidateIdentity, *, lifec
         conn.execute("INSERT OR IGNORE INTO model_families(provider,family_key,display_name) VALUES(?,?,?)", (identity.provider, identity.family, identity.display_name))
         family_id = conn.execute("SELECT id FROM model_families WHERE provider=? AND family_key=?", (identity.provider, identity.family)).fetchone()[0]
     values = identity.as_dict()
-    conn.execute("""INSERT INTO models(identity_key,provider,family_id,family,provider_model_id,display_name,generation,variant,capabilities_json,architecture,parameter_count,active_parameter_count,quantization,serving_engine,serving_engine_version,hardware_profile,lifecycle)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(identity_key) DO UPDATE SET lifecycle=excluded.lifecycle""", (identity.identity_key, values["provider"], family_id, values["family"], values["provider_model_id"], values["display_name"], values["generation"], values["variant"], json.dumps(values["capabilities"], sort_keys=True), values["architecture"], values["parameter_count"], values["active_parameter_count"], values["quantization"], values["serving_engine"], values["serving_engine_version"], values["hardware_profile"], lifecycle))
+    conn.execute("""INSERT INTO models(identity_key,provider,family_id,family,provider_model_id,display_name,generation,variant,capabilities_json,architecture,parameter_count,active_parameter_count,quantization,serving_engine,serving_engine_version,hardware_profile,lifecycle,discovered_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(identity_key) DO UPDATE SET lifecycle=excluded.lifecycle, discovered_at=COALESCE(excluded.discovered_at,models.discovered_at)""", (identity.identity_key, values["provider"], family_id, values["family"], values["provider_model_id"], values["display_name"], values["generation"], values["variant"], json.dumps(values["capabilities"], sort_keys=True), values["architecture"], values["parameter_count"], values["active_parameter_count"], values["quantization"], values["serving_engine"], values["serving_engine_version"], values["hardware_profile"], lifecycle, discovered_at))
     conn.commit()
     return int(conn.execute("SELECT id FROM models WHERE identity_key=?", (identity.identity_key,)).fetchone()[0])
 
 
-def record_cost(conn: sqlite3.Connection, run_id: str, *, billing_mode: str, provider_reported_cost: float | None = None, calculated_cost: float | None = None, api_equivalent_cost: float | None = None, currency: str | None = None, cost_source: str = "unavailable", price_snapshot_id: int | None = None, input_tokens: int | None = None, output_tokens: int | None = None) -> None:
+def record_availability(conn: sqlite3.Connection, model_id: int, *, state: str, observed_at: str | None = None, source: str | None = None, details: dict[str, Any] | None = None) -> None:
+    conn.execute("INSERT INTO model_availability(model_id,state,observed_at,source,details_json) VALUES(?,?,?,?,?)", (model_id, state, observed_at or datetime.now(timezone.utc).isoformat(), source, json.dumps(details or {}, sort_keys=True)))
+    conn.commit()
+
+
+def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None) -> int:
+    conn.execute("INSERT OR IGNORE INTO harnesses(name,version,adapter_version,transport) VALUES(?,?,?,?)", (name, version, adapter_version, transport))
+    conn.commit()
+    return int(conn.execute("SELECT id FROM harnesses WHERE name IS ? AND version IS ? AND adapter_version IS ?", (name, version, adapter_version)).fetchone()[0])
+
+
+def record_benchmark_suite(conn: sqlite3.Connection, name: str, layer: str, version: str, *, git_sha: str | None = None, metadata: dict[str, Any] | None = None) -> int:
+    conn.execute("INSERT OR IGNORE INTO benchmark_suites(name,layer,version,git_sha,metadata_json) VALUES(?,?,?,?,?)", (name, layer, version, git_sha, json.dumps(metadata or {}, sort_keys=True)))
+    conn.commit()
+    return int(conn.execute("SELECT id FROM benchmark_suites WHERE name=? AND version=? AND git_sha IS ?", (name, version, git_sha)).fetchone()[0])
+
+
+def record_benchmark_task(conn: sqlite3.Connection, suite_id: int, *, family: str, task_id: str, variant_seed: str, content_hash: str, prompt_hash: str, evaluator_hash: str) -> int:
+    conn.execute("INSERT OR IGNORE INTO benchmark_tasks(suite_id,family,task_id,variant_seed,content_hash,prompt_hash,evaluator_hash) VALUES(?,?,?,?,?,?,?)", (suite_id, family, task_id, variant_seed, content_hash, prompt_hash, evaluator_hash))
+    conn.commit()
+    return int(conn.execute("SELECT id FROM benchmark_tasks WHERE suite_id=? AND task_id=? AND variant_seed=?", (suite_id, task_id, variant_seed)).fetchone()[0])
+
+
+def record_task_attempt(conn: sqlite3.Connection, run_id: str, task_id: int, *, score: float | None = None, public_score: float | None = None, hidden_score: float | None = None, invariant_score: float | None = None, api_score: float | None = None, scope_compliant: bool | None = None, wall_seconds: float | None = None, metadata: dict[str, Any] | None = None) -> int:
+    conn.execute("INSERT INTO task_attempts(run_id,task_id,score,public_score,hidden_score,invariant_score,api_score,scope_compliant,wall_seconds,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, task_id, score, public_score, hidden_score, invariant_score, api_score, None if scope_compliant is None else int(scope_compliant), wall_seconds, json.dumps(metadata or {}, sort_keys=True)))
+    conn.commit()
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+
+def record_request_metric(conn: sqlite3.Connection, run_id: str, metric: dict[str, Any]) -> int:
+    conn.execute("INSERT INTO request_metrics(run_id,ordinal,started_at,ended_at,model,provider,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,reasoning_tokens,ttft_seconds,wall_seconds,stop_reason,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, metric.get("ordinal"), metric.get("request_start"), metric.get("request_end"), metric.get("model"), metric.get("provider"), metric.get("input_tokens"), metric.get("output_tokens"), metric.get("cache_read_tokens"), metric.get("cache_write_tokens"), metric.get("reasoning_tokens"), metric.get("ttft_seconds"), metric.get("wall_seconds"), metric.get("stop_reason"), json.dumps(metric, sort_keys=True)))
+    conn.commit()
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+
+def record_tool_event(conn: sqlite3.Connection, run_id: str, event: dict[str, Any], *, request_id: int | None = None) -> int:
+    conn.execute("INSERT INTO tool_events(run_id,request_id,ordinal,tool_name,validity,error,recovered,alternate_tool,metadata_json) VALUES(?,?,?,?,?,?,?,?,?)", (run_id, request_id, event.get("ordinal"), event.get("tool_name"), event.get("validity"), event.get("error"), event.get("recovered"), event.get("alternate_tool"), json.dumps(event, sort_keys=True)))
+    conn.commit()
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+
+def finalize_run(conn: sqlite3.Connection, run_id: str, *, ended_at: str | None = None, status: str = "completed", raw_evidence_path: str | None = None, raw_evidence_sha256: str | None = None) -> None:
+    conn.execute("UPDATE runs SET ended_at=?,status=?,raw_evidence_path=COALESCE(?,raw_evidence_path),raw_evidence_sha256=COALESCE(?,raw_evidence_sha256) WHERE run_id=?", (ended_at or datetime.now(timezone.utc).isoformat(), status, raw_evidence_path, raw_evidence_sha256, run_id))
+    conn.commit()
+
+
+def record_cost(conn: sqlite3.Connection, run_id: str, *, billing_mode: str, provider_reported_cost: float | None = None, calculated_cost: float | None = None, api_equivalent_cost: float | None = None, currency: str | None = None, cost_source: str = "unavailable", price_snapshot_id: int | None = None, input_tokens: int | None = None, output_tokens: int | None = None, cached_input_tokens: int | None = None, cache_write_tokens: int | None = None, reasoning_tokens: int | None = None) -> None:
     if billing_mode not in {"metered_api", "subscription", "local", "unknown"}:
         raise ValueError("invalid billing mode")
-    conn.execute("INSERT INTO cost_observations(run_id,billing_mode,provider_reported_cost,calculated_cost,api_equivalent_cost,currency,cost_source,price_snapshot_id,input_tokens,output_tokens) VALUES(?,?,?,?,?,?,?,?,?,?)", (run_id, billing_mode, provider_reported_cost, calculated_cost, api_equivalent_cost, currency, cost_source, price_snapshot_id, input_tokens, output_tokens))
+    conn.execute("INSERT INTO cost_observations(run_id,billing_mode,provider_reported_cost,calculated_cost,api_equivalent_cost,currency,cost_source,price_snapshot_id,input_tokens,output_tokens,cached_input_tokens,cache_write_tokens,reasoning_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (run_id, billing_mode, provider_reported_cost, calculated_cost, api_equivalent_cost, currency, cost_source, price_snapshot_id, input_tokens, output_tokens, cached_input_tokens, cache_write_tokens, reasoning_tokens))
     conn.commit()
 
 
