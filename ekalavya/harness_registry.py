@@ -15,6 +15,9 @@ CAPABILITIES = (
     "token_usage", "cost_usage",
 )
 STATUSES = {"supported", "unsupported", "unverified", "version_limited", "unavailable"}
+REQUEST_METRIC_SEMANTICS = {"provider_model_request", "harness_session", "unavailable"}
+TOOL_EVENT_TELEMETRY = {"complete", "partial", "unavailable"}
+TOKEN_METRIC_SEMANTICS = {"provider_billing_tokens", "harness_reported_usage", "unavailable"}
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,9 @@ class HarnessRecord:
     reason: str
     evidence_label: str
     exact_model_scope: str
+    request_metric_semantics: str
+    tool_event_telemetry: str
+    token_metric_semantics: str
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -39,6 +45,11 @@ class HarnessRecord:
             "reason": self.reason,
             "evidence": self.evidence_label,
             "exact_model_scope": self.exact_model_scope,
+            "telemetry": {
+                "request_metric_semantics": self.request_metric_semantics,
+                "tool_event_telemetry": self.tool_event_telemetry,
+                "token_metric_semantics": self.token_metric_semantics,
+            },
         }
 
 
@@ -53,6 +64,7 @@ def audited_registry() -> tuple[HarnessRecord, ...]:
             "no independent candidate-tool subprocess boundary; native sandbox permits parent and network escape",
             "synthetic AGY isolation probe",
             "Gemini Flash exact runtime IDs and reasoning variants",
+            "harness_session", "unavailable", "harness_reported_usage",
         ),
         HarnessRecord(
             "opencode", "1.17.2", "opencode", "opencode",
@@ -61,6 +73,7 @@ def audited_registry() -> tuple[HarnessRecord, ...]:
             "installed model catalogue did not expose an exact Gemini characterization candidate; isolation contract unverified",
             "zero-inference OpenCode model/help inspection",
             "no exact Gemini 3.7/3.8 model observed",
+            "unavailable", "unavailable", "unavailable",
         ),
         HarnessRecord(
             "gemini-cli", "0.55.1", "gemini", "gemini-cli",
@@ -69,6 +82,7 @@ def audited_registry() -> tuple[HarnessRecord, ...]:
             "Linux sandbox requires unavailable Docker or Podman; exact Gemini generation exposure not established",
             "installed Gemini CLI sandbox documentation and version inspection",
             "exact model availability unverified",
+            "unavailable", "unavailable", "unavailable",
         ),
     )
 
@@ -101,3 +115,10 @@ def validate_registry(records: list[dict[str, Any]]) -> None:
         invalid = (set(record.get("eligibility", {}).values()) | set(record.get("capabilities", {}).values())) - STATUSES
         if invalid:
             raise ValueError(f"invalid harness registry status values: {sorted(invalid)}")
+        telemetry = record.get("telemetry", {})
+        if telemetry.get("request_metric_semantics") not in REQUEST_METRIC_SEMANTICS:
+            raise ValueError(f"invalid request metric semantics: {record.get('name')}")
+        if telemetry.get("tool_event_telemetry") not in TOOL_EVENT_TELEMETRY:
+            raise ValueError(f"invalid tool event telemetry: {record.get('name')}")
+        if telemetry.get("token_metric_semantics") not in TOKEN_METRIC_SEMANTICS:
+            raise ValueError(f"invalid token metric semantics: {record.get('name')}")

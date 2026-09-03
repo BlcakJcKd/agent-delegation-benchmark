@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ekalavya.catalogue import add_candidate, promote, selectable
 from ekalavya.config import ensure_control_files, migrate_legacy_config
-from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, upsert_model
+from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_benchmark_suite_correction, record_cost, record_harness, record_price_snapshot, record_request_metric, record_run, upsert_model
 from ekalavya.resolver import resolve
 from ekalavya.schema import CandidateIdentity, RunIntent
 
@@ -94,6 +94,15 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT evaluation_class FROM runs WHERE run_id='public'").fetchone()[0], "public_characterization")
             self.assertEqual(conn.execute("SELECT evaluation_class FROM benchmark_suites WHERE id=?", (suite_id,)).fetchone()[0], "public_characterization")
             with self.assertRaises(ValueError): record_run(conn, "bad", {}, evaluation_class="not-a-class")
+
+    def test_suite_provenance_correction_is_append_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            conn = connect(Path(d) / "ledger.sqlite3")
+            suite_id = record_benchmark_suite(conn, "public", "public", "1", git_sha="old", evaluation_class="public_characterization")
+            correction_id = record_benchmark_suite_correction(conn, suite_id, "new", reason="implementation identity correction", evidence={"raw_preserved": True}, corrected_at="2026-01-01T00:00:00+00:00")
+            self.assertEqual(conn.execute("SELECT git_sha FROM benchmark_suites WHERE id=?", (suite_id,)).fetchone()[0], "new")
+            row = conn.execute("SELECT originally_recorded_git_sha,corrected_git_sha,corrected_at FROM benchmark_suite_corrections WHERE id=?", (correction_id,)).fetchone()
+            self.assertEqual(tuple(row), ("old", "new", "2026-01-01T00:00:00+00:00"))
 
     def test_config_migration_preserves_source_and_permissions_idempotently(self):
         with tempfile.TemporaryDirectory() as d:

@@ -1,11 +1,17 @@
 import tempfile
 import unittest
+import json
+import hashlib
+import zipfile
 from pathlib import Path
 
 from benchmark.adapters import AntigravityAdapter
 from benchmark.public_characterization.evaluate import evaluate
 from benchmark.public_characterization.generate import make_instance, manifest, materialize, workspace_digest
 from benchmark.public_characterization.runner import check_local_suite
+from benchmark.public_characterization.audit import _matrix
+from benchmark.provenance import ProvenanceError, validate_git_identity
+from benchmark.review_bundle import create_review_bundle
 from ekalavya.catalogue import canonicalize_gemini_flash_generations, expand_runtime_variants
 from ekalavya.harness_registry import current_registry, validate_registry
 from ekalavya.schema import CandidateIdentity, RunIntent
@@ -73,6 +79,74 @@ class HarnessRegistryTests(unittest.TestCase):
         self.assertEqual(agy["eligibility"]["public_characterization"], "supported")
         self.assertEqual(agy["eligibility"]["hidden_benchmark"], "unsupported")
         self.assertIn("independent candidate-tool subprocess", agy["reason"])
+        self.assertEqual(agy["telemetry"]["request_metric_semantics"], "harness_session")
+        self.assertEqual(agy["telemetry"]["tool_event_telemetry"], "unavailable")
+
+
+class ReviewBundleTests(unittest.TestCase):
+    def test_bundle_is_allowlisted_and_archived_without_optional_plots(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "experiment"
+            (state / "evidence").mkdir(parents=True)
+            (state / "REPORT.md").write_text("state=/home/bivin/.local/state/ekalavya\n")
+            (state / "run-summary.json").write_text(json.dumps({"attempts": 1}))
+            (state / "evidence/a.json").write_text(json.dumps({"exit_code": 0, "timed_out": False}))
+            (state / "ledger.sqlite3").write_text("must not copy")
+            (state / "workspaces").mkdir()
+            result = create_review_bundle("example", state_dir=state, output=Path(temp) / "review-bundle")
+            bundle = Path(result["bundle"])
+            self.assertTrue(Path(result["archive"]).is_file())
+            self.assertFalse((bundle / "ledger.sqlite3").exists())
+            self.assertFalse((bundle / "workspaces").exists())
+            self.assertEqual((bundle / "REPORT.md").read_text(), "state=<USER_HOME>/.local/state/ekalavya\n")
+            self.assertEqual(result["manifest"]["workspaces_included"], False)
+            self.assertEqual(result["manifest"]["raw_provider_traces_included"], False)
+            with zipfile.ZipFile(result["archive"]) as archive:
+                names = set(archive.namelist())
+            self.assertIn("manifest.json", names)
+            self.assertNotIn("ledger.sqlite3", names)
+
+            manifest_data = json.loads((bundle / "manifest.json").read_text())
+            self.assertEqual(set(manifest_data["included_files"]), {p.relative_to(bundle).as_posix() for p in bundle.rglob("*") if p.is_file()})
+            for name, digest in manifest_data["sha256"].items():
+                self.assertEqual(hashlib.sha256((bundle / name).read_bytes()).hexdigest(), digest)
+            self.assertIn("self-referential", manifest_data["sha256_exclusions"]["manifest.json"])
+
+    def test_bundle_preserves_source_and_represents_provenance_correction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "experiment"
+            (state / "evidence").mkdir(parents=True)
+            source = state / "evidence" / "attempt.json"
+            source.write_text(json.dumps({"exit_code": 0, "timed_out": False, "path": "/home/bivin/private"}))
+            before = source.read_bytes()
+            (state / "REPORT.md").write_text("review\n")
+            (state / "provenance").mkdir()
+            (state / "provenance" / "correction-summary.json").write_text(json.dumps({
+                "originally_recorded_suite_sha": "old",
+                "corrected_suite_sha": "new",
+                "correction_reason": "test",
+                "correction_timestamp": "now",
+                "ledger_correction_id": 7,
+            }))
+            result = create_review_bundle("public-characterization-v1", state_dir=state, output=Path(temp) / "bundle")
+            self.assertEqual(source.read_bytes(), before)
+            self.assertEqual(result["manifest"]["provenance_correction"]["originally_recorded_suite_sha"], "old")
+            self.assertEqual(result["manifest"]["provenance_correction"]["corrected_suite_sha"], "new")
+            sanitized = json.loads((Path(result["bundle"]) / "evidence/attempt.json").read_text())
+            self.assertEqual(sanitized["path"], "<USER_HOME>/private")
+
+    def test_matrix_extraction_is_deterministic_and_complete(self):
+        item = make_instance("P1_multi_file_debug", 42)
+        evidence = {"run_id": "run", "started_at": "2026-01-01T00:00:00Z", "resolved": {"provider_model_id": "model", "reasoning": "low"}, "task": {"family": item.family}, "exit_code": 0, "timed_out": False, "wall_seconds": 1.25, "assessment": {"full_pass": False, "checks": [{"name": f"c{i}", "passed": i % 2 == 0} for i in range(1, 9)]}}
+        first = _matrix([evidence], {"run": {"status": "completed", "score": 50.0, "input_tokens": 1, "output_tokens": 2, "cache_read_tokens": 3, "reasoning_tokens": 4}})
+        second = _matrix([evidence], {"run": {"status": "completed", "score": 50.0, "input_tokens": 1, "output_tokens": 2, "cache_read_tokens": 3, "reasoning_tokens": 4}})
+        self.assertEqual(first, second)
+        self.assertEqual(first[0]["passed_checks"], 4)
+        self.assertEqual([first[0][f"check_{i}"] for i in range(1, 9)], ["fail", "pass", "fail", "pass", "fail", "pass", "fail", "pass"])
+
+    def test_provenance_rejects_commit_without_suite_sources(self):
+        with self.assertRaises(ProvenanceError):
+            validate_git_identity(Path(__file__).resolve().parents[1], ("benchmark/public_characterization/runner.py",), git_sha="91f96127f9393cc81e4f4c296ec5d8e228210a13")
 
 
 if __name__ == "__main__":

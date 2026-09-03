@@ -20,11 +20,12 @@ CREATE TABLE IF NOT EXISTS schema_versions(version INTEGER PRIMARY KEY, applied_
 CREATE TABLE IF NOT EXISTS model_families(id INTEGER PRIMARY KEY, provider TEXT NOT NULL, family_key TEXT NOT NULL, lineage TEXT, display_name TEXT, UNIQUE(provider,family_key));
 CREATE TABLE IF NOT EXISTS models(id INTEGER PRIMARY KEY, identity_key TEXT NOT NULL UNIQUE, provider TEXT NOT NULL, family_id INTEGER REFERENCES model_families(id), family TEXT, provider_model_id TEXT, display_name TEXT, generation TEXT, variant TEXT, capabilities_json TEXT, architecture TEXT, parameter_count TEXT, active_parameter_count TEXT, quantization TEXT, serving_engine TEXT, serving_engine_version TEXT, hardware_profile TEXT, lifecycle TEXT NOT NULL DEFAULT 'candidate', discovered_at TEXT, retired_at TEXT);
 CREATE TABLE IF NOT EXISTS model_availability(id INTEGER PRIMARY KEY, model_id INTEGER NOT NULL REFERENCES models(id), state TEXT NOT NULL, observed_at TEXT NOT NULL, source TEXT, details_json TEXT);
-CREATE TABLE IF NOT EXISTS harnesses(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, adapter_version TEXT, transport TEXT, capabilities_json TEXT, eligibility_json TEXT, evidence_label TEXT, observed_at TEXT, UNIQUE(name,version,adapter_version));
+CREATE TABLE IF NOT EXISTS harnesses(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, adapter_version TEXT, transport TEXT, capabilities_json TEXT, telemetry_json TEXT, eligibility_json TEXT, evidence_label TEXT, observed_at TEXT, UNIQUE(name,version,adapter_version));
 CREATE TABLE IF NOT EXISTS serving_engines(id INTEGER PRIMARY KEY, name TEXT NOT NULL, version TEXT, UNIQUE(name,version));
 CREATE TABLE IF NOT EXISTS hardware_profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, details_json TEXT);
 CREATE TABLE IF NOT EXISTS profiles(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, default_identity_key TEXT, permitted_candidates_json TEXT, required_capabilities_json TEXT, writable INTEGER, reasoning_policy TEXT, default_reasoning TEXT, enabled INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS benchmark_suites(id INTEGER PRIMARY KEY, name TEXT NOT NULL, layer TEXT NOT NULL, version TEXT NOT NULL, evaluation_class TEXT NOT NULL DEFAULT 'unknown', git_sha TEXT, metadata_json TEXT, UNIQUE(name,version,git_sha));
+CREATE TABLE IF NOT EXISTS benchmark_suite_corrections(id INTEGER PRIMARY KEY, suite_id INTEGER NOT NULL REFERENCES benchmark_suites(id), originally_recorded_git_sha TEXT, corrected_git_sha TEXT NOT NULL, corrected_at TEXT NOT NULL, reason TEXT NOT NULL, evidence_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS benchmark_tasks(id INTEGER PRIMARY KEY, suite_id INTEGER REFERENCES benchmark_suites(id), family TEXT NOT NULL, task_id TEXT NOT NULL, variant_seed TEXT, content_hash TEXT, prompt_hash TEXT, evaluator_hash TEXT, UNIQUE(suite_id,task_id,variant_seed));
 CREATE TABLE IF NOT EXISTS runs(run_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT, profile TEXT, requested_json TEXT NOT NULL, resolved_json TEXT, resolution_reason TEXT, provider TEXT, identity_key TEXT, harness_id INTEGER, engine_id INTEGER, hardware_id INTEGER, billing_mode TEXT, evaluation_class TEXT NOT NULL DEFAULT 'unknown', raw_evidence_path TEXT, raw_evidence_sha256 TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS task_attempts(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), task_id INTEGER REFERENCES benchmark_tasks(id), score REAL, public_score REAL, hidden_score REAL, invariant_score REAL, api_score REAL, scope_compliant INTEGER, wall_seconds REAL, metadata_json TEXT);
@@ -63,6 +64,7 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     """Additive migrations for ledgers created before evaluation classes."""
     _ensure_column(conn, "harnesses", "capabilities_json", "TEXT")
+    _ensure_column(conn, "harnesses", "telemetry_json", "TEXT")
     _ensure_column(conn, "harnesses", "eligibility_json", "TEXT")
     _ensure_column(conn, "harnesses", "evidence_label", "TEXT")
     _ensure_column(conn, "harnesses", "observed_at", "TEXT")
@@ -134,9 +136,12 @@ def record_availability(conn: sqlite3.Connection, model_id: int, *, state: str, 
     conn.commit()
 
 
-def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None, capabilities: dict[str, Any] | None = None, eligibility: dict[str, str] | None = None, evidence_label: str | None = None, observed_at: str | None = None) -> int:
-    conn.execute("INSERT OR IGNORE INTO harnesses(name,version,adapter_version,transport,capabilities_json,eligibility_json,evidence_label,observed_at) VALUES(?,?,?,?,?,?,?,?)", (name, version, adapter_version, transport, json.dumps(capabilities, sort_keys=True) if capabilities is not None else None, json.dumps(eligibility, sort_keys=True) if eligibility is not None else None, evidence_label, observed_at))
-    conn.execute("UPDATE harnesses SET capabilities_json=COALESCE(?,capabilities_json), eligibility_json=COALESCE(?,eligibility_json), evidence_label=COALESCE(?,evidence_label), observed_at=COALESCE(?,observed_at) WHERE name IS ? AND version IS ? AND adapter_version IS ?", (json.dumps(capabilities, sort_keys=True) if capabilities is not None else None, json.dumps(eligibility, sort_keys=True) if eligibility is not None else None, evidence_label, observed_at, name, version, adapter_version))
+def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None, capabilities: dict[str, Any] | None = None, telemetry: dict[str, Any] | None = None, eligibility: dict[str, str] | None = None, evidence_label: str | None = None, observed_at: str | None = None) -> int:
+    encoded_capabilities = json.dumps(capabilities, sort_keys=True) if capabilities is not None else None
+    encoded_telemetry = json.dumps(telemetry, sort_keys=True) if telemetry is not None else None
+    encoded_eligibility = json.dumps(eligibility, sort_keys=True) if eligibility is not None else None
+    conn.execute("INSERT OR IGNORE INTO harnesses(name,version,adapter_version,transport,capabilities_json,telemetry_json,eligibility_json,evidence_label,observed_at) VALUES(?,?,?,?,?,?,?,?,?)", (name, version, adapter_version, transport, encoded_capabilities, encoded_telemetry, encoded_eligibility, evidence_label, observed_at))
+    conn.execute("UPDATE harnesses SET capabilities_json=COALESCE(?,capabilities_json), telemetry_json=COALESCE(?,telemetry_json), eligibility_json=COALESCE(?,eligibility_json), evidence_label=COALESCE(?,evidence_label), observed_at=COALESCE(?,observed_at) WHERE name IS ? AND version IS ? AND adapter_version IS ?", (encoded_capabilities, encoded_telemetry, encoded_eligibility, evidence_label, observed_at, name, version, adapter_version))
     conn.commit()
     return int(conn.execute("SELECT id FROM harnesses WHERE name IS ? AND version IS ? AND adapter_version IS ?", (name, version, adapter_version)).fetchone()[0])
 
@@ -147,6 +152,32 @@ def record_benchmark_suite(conn: sqlite3.Connection, name: str, layer: str, vers
     conn.execute("INSERT OR IGNORE INTO benchmark_suites(name,layer,version,evaluation_class,git_sha,metadata_json) VALUES(?,?,?,?,?,?)", (name, layer, version, evaluation_class, git_sha, json.dumps(metadata or {}, sort_keys=True)))
     conn.commit()
     return int(conn.execute("SELECT id FROM benchmark_suites WHERE name=? AND version=? AND git_sha IS ?", (name, version, git_sha)).fetchone()[0])
+
+
+def record_benchmark_suite_correction(
+    conn: sqlite3.Connection,
+    suite_id: int,
+    corrected_git_sha: str,
+    *,
+    reason: str,
+    evidence: dict[str, Any] | None = None,
+    corrected_at: str | None = None,
+) -> int:
+    """Correct derived suite identity while preserving the prior value."""
+    row = conn.execute("SELECT git_sha FROM benchmark_suites WHERE id=?", (suite_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"unknown benchmark suite: {suite_id}")
+    old_sha = row[0]
+    if old_sha == corrected_git_sha:
+        return int(conn.execute("SELECT id FROM benchmark_suite_corrections WHERE suite_id=? ORDER BY id DESC LIMIT 1", (suite_id,)).fetchone()[0]) if conn.execute("SELECT 1 FROM benchmark_suite_corrections WHERE suite_id=?", (suite_id,)).fetchone() else 0
+    when = corrected_at or datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO benchmark_suite_corrections(suite_id,originally_recorded_git_sha,corrected_git_sha,corrected_at,reason,evidence_json) VALUES(?,?,?,?,?,?)",
+        (suite_id, old_sha, corrected_git_sha, when, reason, json.dumps(evidence or {}, sort_keys=True)),
+    )
+    conn.execute("UPDATE benchmark_suites SET git_sha=? WHERE id=?", (corrected_git_sha, suite_id))
+    conn.commit()
+    return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
 def record_benchmark_task(conn: sqlite3.Connection, suite_id: int, *, family: str, task_id: str, variant_seed: str, content_hash: str, prompt_hash: str, evaluator_hash: str) -> int:

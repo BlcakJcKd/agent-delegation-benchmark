@@ -27,6 +27,7 @@ from .harness_registry import current_registry, validate_registry
 from .ledger import connect, default_db_path, finalize_run, record_availability, record_resolution, record_run, upsert_model
 from .migrate import migrate_all
 from .resolver import resolve
+from benchmark.review_bundle import create_review_bundle
 from .schema import CandidateIdentity, RunIntent
 
 
@@ -220,6 +221,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
+    if getattr(args, "bench_action", None) == "bundle":
+        try:
+            result = create_review_bundle(args.experiment, output=args.output)
+        except (OSError, ValueError) as exc:
+            print(f"review bundle error: {exc}", file=sys.stderr); return 2
+        _json_or_text(result, args.json); return 0
     if getattr(args, "bench_action", None) in {"status", "harnesses"}:
         records = current_registry(); validate_registry(records)
         if args.bench_action == "status":
@@ -245,6 +252,7 @@ def _parser() -> argparse.ArgumentParser:
     q=sub.add_parser("bench", help="read-only benchmark and harness inspection"); bench_sub=q.add_subparsers(dest="bench_action")
     b=bench_sub.add_parser("status", help="show harness eligibility by execution class"); common(b); b.set_defaults(func=cmd_bench)
     b=bench_sub.add_parser("harnesses", help="show detailed harness capabilities"); common(b); b.set_defaults(func=cmd_bench)
+    b=bench_sub.add_parser("bundle", help="create an allowlisted private experiment review bundle"); b.add_argument("experiment"); b.add_argument("--output", type=Path); common(b); b.set_defaults(func=cmd_bench)
     q.set_defaults(func=cmd_bench, bench_action=None, json=False)
     q=sub.add_parser("run"); q.add_argument("profile"); q.add_argument("--provider"); q.add_argument("--family"); q.add_argument("--model"); q.add_argument("--reasoning"); q.add_argument("--harness"); q.add_argument("--workspace", type=Path); q.add_argument("--prompt-file", type=Path); q.add_argument("--primary"); q.add_argument("--timeout", type=int, default=None); q.add_argument("--json", action="store_true"); q.set_defaults(func=cmd_run)
     return p
