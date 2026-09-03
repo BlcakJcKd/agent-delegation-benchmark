@@ -7,7 +7,7 @@ from unittest.mock import patch
 from benchmark.public_characterization_v2 import BASELINE_TARGET, FAMILIES, PILOT_CONFIGURATIONS
 from benchmark.public_characterization_v2.evaluate import evaluate
 from benchmark.public_characterization_v2.generate import make_instance, materialize, workspace_digest
-from benchmark.public_characterization_v2.runner import _visible_verify, changed_files, derive_scores, prohibited_files, validate_preflight
+from benchmark.public_characterization_v2.runner import _visible_verify, changed_files, derive_scores, prohibited_files, report, validate_preflight
 from benchmark.review_bundle import create_review_bundle
 
 
@@ -81,6 +81,29 @@ class PublicCharacterizationV2Tests(unittest.TestCase):
             a, b = Path(temporary) / "a", Path(temporary) / "b"
             materialize(instance, a); materialize(instance, b)
             self.assertEqual(workspace_digest(a), workspace_digest(b))
+
+    def test_report_has_individual_checks_and_scatter_plot_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); evidence = root / "evidence"; evidence.mkdir()
+            row = {
+                "resolved": {"provider_model_id": "gemini-3.8-flash-low", "reasoning": "low"},
+                "task": {"family": "P1_multi_file_debug"}, "status": "completed",
+                "baseline_score": 25.0, "baseline_check_vector": [True, True, False, False, False, False, False, False],
+                "final_score": 100.0, "final_check_vector": [True] * 8, "delta_score": 75.0,
+                "normalized_improvement": 1.0, "full_pass": True, "evaluator_tampering": False,
+                "prohibited_changed_files": [], "wall_seconds": 2.0, "input_tokens": 10,
+                "output_tokens": 5, "cache_read_tokens": 20, "reasoning_tokens": 1,
+            }
+            (evidence / "one.json").write_text(json.dumps(row))
+            report(root)
+            header = (root / "task-check-matrix.csv").read_text().splitlines()[0]
+            self.assertIn("check_1", header)
+            self.assertIn("check_8", header)
+            self.assertIn("passed_checks", header)
+            metadata = json.loads((root / "plot-metadata.json").read_text())
+            self.assertEqual(metadata["baseline-vs-final"]["kind"], "scatter")
+            self.assertEqual(metadata["final-vs-wall"]["kind"], "scatter")
+            self.assertEqual(metadata["final-vs-tokens"]["kind"], "scatter")
 
 
 if __name__ == "__main__":

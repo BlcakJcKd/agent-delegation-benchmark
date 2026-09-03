@@ -18,6 +18,7 @@ ROOT_ARTIFACTS = (
     "REPORT.md", "run-summary.json", "discovery.json", "plot-metadata.json",
     "AUDIT_REPORT.md", "CORRECTED_REPORT.md", "telemetry-semantics.md",
     "token-semantics.md", "task-check-matrix.md", "task-check-matrix.csv",
+    "configuration-summary.json",
     "VALIDATION_REPORT.md",
 )
 OPTIONAL_PLOTS = (
@@ -94,9 +95,9 @@ def _attempt_counts(state: Path) -> dict[str, int]:
         except (OSError, ValueError):
             continue
         attempts += 1
-        if item.get("timed_out") is True:
+        if item.get("timed_out") is True or item.get("status") == "explicit_timeout":
             timeouts += 1
-        elif item.get("exit_code") == 0:
+        elif item.get("status") == "completed":
             completed += 1
     return {"attempts": attempts, "completed": completed, "failed": attempts - completed - timeouts, "timeouts": timeouts}
 

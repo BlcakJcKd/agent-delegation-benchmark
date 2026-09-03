@@ -84,6 +84,16 @@ class HarnessRegistryTests(unittest.TestCase):
 
 
 class ReviewBundleTests(unittest.TestCase):
+    def test_bundle_counts_tampering_as_failed_not_completed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "experiment"; (state / "evidence").mkdir(parents=True)
+            (state / "REPORT.md").write_text("review\n")
+            (state / "evidence/a.json").write_text(json.dumps({"exit_code": 0, "timed_out": False, "status": "evaluator_tampering"}))
+            result = create_review_bundle("example", state_dir=state, output=Path(temp) / "bundle")
+            self.assertEqual(result["manifest"]["completed"], 0)
+            self.assertEqual(result["manifest"]["failed"], 1)
+            self.assertEqual(result["manifest"]["timeouts"], 0)
+
     def test_bundle_is_allowlisted_and_archived_without_optional_plots(self):
         with tempfile.TemporaryDirectory() as temp:
             state = Path(temp) / "experiment"
