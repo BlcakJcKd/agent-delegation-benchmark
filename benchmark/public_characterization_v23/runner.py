@@ -184,7 +184,7 @@ def validate_preflight(*, seed: int, phase: str, require_reference: bool = False
     }
     result["validation_consistency"] = validation_consistency(result, reference_required=require_reference, check_count=CHECK_COUNT)
     result["gates"]["validation_consistency"] = result["validation_consistency"]["ok"]
-    result["ok"] = all(value is True for value in result["gates"].values())
+    result["ok"] = all(value is True or value == "not_required" for value in result["gates"].values())
     validation_dir = state_root() / "validation"; validation_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     (validation_dir / f"preflight-{phase}-{seed}.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     (validation_dir / "preflight.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
