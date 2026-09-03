@@ -154,15 +154,19 @@ def report(root=None):
  (root/"REPORT.md").write_text("\n".join(lines)+"\n"); (root/"telemetry-semantics.md").write_text("# Telemetry semantics\n\nAGY 1.1.25 request metrics are harness_session, not verified provider requests. Tool event telemetry is unavailable, not observable zero.\n"); (root/"token-semantics.md").write_text("# Token semantics\n\nInput, output, cache-read, and reasoning values are AGY-reported usage. Billing equivalence and cumulative/session semantics are not verified.\n")
  (root/"AUDIT_REPORT.md").write_text("# Public Characterization V2.2 audit\n\nRoot-cause clusters are controller-side validation metadata, not candidate scoring. Calibration is excluded from comparative statistics.\n\n"+("Calibration passed its intermediate-difficulty gate; comparative execution was authorized." if _calibration_useful(cal) else "Calibration did not demonstrate useful intermediate difficulty; comparative execution was not authorized.")+"\n")
  return {"comparative":configs,"calibration":json.loads((root/"calibration-summary.json").read_text())}
-def pilot():
- gate=validate_preflight(seed=CALIBRATION_SEED,phase=PHASE_CALIBRATION,require_reference=True)
- if not gate["ok"]: raise RuntimeError("V2.2 calibration no-inference gates failed; no model started")
- root=state_root(); instances=[make_instance(f,CALIBRATION_SEED+i) for i,f in enumerate(FAMILIES)]; baselines={x["family"]:x for x in gate["tasks"]}; prov=gate["provenance"]; conn=connect(); reg=current_registry(); validate_registry(reg); agy=next(x for x in reg if x["name"]=="agy"); agyver=agy.get("observed_version") or agy["version"]
+def _public_artifacts(instances,root):
  for x in instances:
   for base in ("task-specifications","verifier-contracts","edit-scopes","baseline-task-snapshots"):(root/base/x.family).mkdir(parents=True,exist_ok=True)
   (root/"task-specifications"/x.family/"README.md").write_text(x.files["README.md"]); (root/"task-specifications"/x.family/"specification.json").write_text(json.dumps(x.specification,indent=2,sort_keys=True)+"\n"); (root/"verifier-contracts"/x.family/"contract.py").write_text(x.files["verifier/contract.py"]); (root/"verifier-contracts"/x.family/"verify.py").write_text(x.files["verifier/verify.py"]); (root/"edit-scopes"/x.family/"allowed-edit-manifest.json").write_text(json.dumps(x.edit_scope,indent=2,sort_keys=True)+"\n")
   for name,value in x.files.items():
    if not name.startswith((".ekalavya/","verifier/")): p=root/"baseline-task-snapshots"/x.family/name; p.parent.mkdir(parents=True,exist_ok=True); p.write_text(value)
+def pilot():
+ gate=validate_preflight(seed=CALIBRATION_SEED,phase=PHASE_CALIBRATION,require_reference=True)
+ if not gate["ok"]: raise RuntimeError("V2.2 calibration no-inference gates failed; no model started")
+ root=state_root()
+ if list((root/"calibration-evidence").glob("*.json")) or list((root/"evidence").glob("*.json")): raise RuntimeError("V2.2 pilot already has evidence; retries are prohibited")
+ instances=[make_instance(f,CALIBRATION_SEED+i) for i,f in enumerate(FAMILIES)]; baselines={x["family"]:x for x in gate["tasks"]}; prov=gate["provenance"]; conn=connect(); reg=current_registry(); validate_registry(reg); agy=next(x for x in reg if x["name"]=="agy"); agyver=agy.get("observed_version") or agy["version"]
+ _public_artifacts(instances,root)
  (root/"discovery.json").write_text(json.dumps({"experiment":SUITE_NAME,"evaluation_class":EVALUATION_CLASS,"harness":"agy","harness_version":agyver,"calibration_seed":CALIBRATION_SEED,"evaluation_seeds":EVALUATION_SEEDS,"calibration_configuration":{"model":CALIBRATION_CONFIG[0],"reasoning":CALIBRATION_CONFIG[1]},"comparison_configurations":[{"model":m,"reasoning":r} for m,r in COMPARISON_CONFIGURATIONS],"attempt_timeout_seconds":ATTEMPT_TIMEOUT_SECONDS},indent=2,sort_keys=True)+"\n")
  hid=record_harness(conn,"agy",version=agyver,adapter_version="benchmark.public_characterization_v22.runner",transport="agy",capabilities=agy["capabilities"],telemetry=agy["telemetry"],eligibility=agy["eligibility"],evidence_label="public_characterization_non_adversarial",observed_at=now())
  sid,tids=_record_suite(conn,instances,prov,baselines,gate["reference_validation"]["validation_timestamp"]); results=[]
@@ -172,7 +176,7 @@ def pilot():
  if useful:
   eval_gates=[validate_preflight(seed=EVALUATION_SEEDS[f],phase=PHASE_COMPARATIVE,require_reference=True) for f in FAMILIES]
   if not all(x["ok"] for x in eval_gates): raise RuntimeError("fresh comparative no-inference gates failed; comparative phase not started")
-  eval_instances=[make_instance(f,EVALUATION_SEEDS[f]) for f in FAMILIES]; eval_baselines={x["family"]:next(g for eg in eval_gates for g in eg["tasks"] if g["family"]==x["family"])}; sid,tids2=_record_suite(conn,eval_instances,eval_gates[0]["provenance"],eval_baselines,eval_gates[0]["reference_validation"]["validation_timestamp"])
+  eval_instances=[make_instance(f,EVALUATION_SEEDS[f]) for f in FAMILIES]; _public_artifacts(eval_instances,root); eval_baselines={x["family"]:next(g for eg in eval_gates for g in eg["tasks"] if g["family"]==x["family"])}; sid,tids2=_record_suite(conn,eval_instances,eval_gates[0]["provenance"],eval_baselines,eval_gates[0]["reference_validation"]["validation_timestamp"])
   for model,reason in COMPARISON_CONFIGURATIONS:
    for family in FAMILIES:
     x=next(z for z in eval_instances if z.family==family); results.append(_attempt(conn,sid,tids2[x.task_id],x,eval_baselines[family],model,reason,hid,root,agy["telemetry"],agyver,PHASE_COMPARATIVE))
@@ -186,4 +190,3 @@ if __name__=="__main__":
  if action=="pilot": print(json.dumps(pilot(),indent=2,sort_keys=True))
  elif action=="report": print(json.dumps(report(),indent=2,sort_keys=True))
  else: raise SystemExit(f"unknown action {action}")
-

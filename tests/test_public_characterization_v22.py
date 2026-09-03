@@ -5,11 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from benchmark.public_characterization_v22 import CALIBRATION_SEED, EVALUATION_SEEDS, FAMILIES, PHASE_CALIBRATION
+from benchmark.public_characterization_v22 import ATTEMPT_TIMEOUT_SECONDS, CALIBRATION_SEED, EVALUATION_SEEDS, FAMILIES, PHASE_CALIBRATION
 from benchmark.public_characterization_v22.evaluate import evaluate
 from benchmark.public_characterization_v22.generate import make_instance, materialize
 from benchmark.public_characterization_v22.gold_accessibility import audit_tracked_gold_accessibility
-from benchmark.public_characterization_v22.runner import _calibration_useful, prohibited_files
+from benchmark.public_characterization_v22.runner import ROOT_CLUSTERS, _calibration_useful, prohibited_files
+from benchmark.review_bundle import create_review_bundle
 
 
 class PublicCharacterizationV22Tests(unittest.TestCase):
@@ -45,3 +46,22 @@ class PublicCharacterizationV22Tests(unittest.TestCase):
         self.assertTrue(_calibration_useful([base, {**base, "final_score": 62.5}]))
         self.assertFalse(_calibration_useful([base, {**base, "final_score": 100.0}]))
 
+    def test_structural_metadata_has_four_clusters_per_family(self):
+        self.assertTrue(all(len(clusters) >= 4 for clusters in ROOT_CLUSTERS.values()))
+
+    def test_fixed_operational_budget_and_phase_seed_separation(self):
+        self.assertEqual(ATTEMPT_TIMEOUT_SECONDS, 900)
+        self.assertNotIn(CALIBRATION_SEED, EVALUATION_SEEDS.values())
+
+    def test_bundle_allowlists_calibration_evidence_and_excludes_workspaces(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "state"
+            state.mkdir()
+            (state / "REPORT.md").write_text("report")
+            (state / "calibration-evidence").mkdir()
+            (state / "calibration-evidence" / "P1.json").write_text("{}")
+            (state / "workspaces").mkdir()
+            (state / "workspaces" / "secret.txt").write_text("not included")
+            result = create_review_bundle("public-characterization-v2.2", state_dir=state, output=Path(temporary) / "bundle")
+            self.assertIn("calibration-evidence/P1.json", result["manifest"]["included_files"])
+            self.assertFalse(any("workspaces" in name for name in result["manifest"]["included_files"]))
