@@ -11,6 +11,7 @@ from ekalavya.ledger import connect, default_state_dir, finalize_run, record_ben
 from . import BASELINE_MAXIMUM, BASELINE_TARGET, CHECK_COUNT, EVALUATION_CLASS, FAMILIES, IGNORED_GENERATED_DIRS, IGNORED_GENERATED_SUFFIXES, PHASE_A_FAMILIES, PHASE_B_FAMILIES, PILOT_CONFIGURATIONS, SUITE_NAME, SUITE_VERSION
 from .evaluate import evaluate
 from .generate import TaskInstance, make_instance, materialize, sha256_json, workspace_digest
+from benchmark.validation_metadata import propagate_reference_status, validation_consistency
 SEED=20261101
 SOURCE_PATHS=("benchmark/public_characterization_v21/__init__.py","benchmark/public_characterization_v21/generate.py","benchmark/public_characterization_v21/evaluate.py","benchmark/public_characterization_v21/runner.py","benchmark/v2/telemetry.py","benchmark/adapters.py","benchmark/provenance.py","ekalavya/ledger.py","ekalavya/harness_registry.py","pyproject.toml")
 
@@ -66,8 +67,17 @@ def validate_preflight(*,require_reference=False,seed=SEED):
     if rp.is_file():
         try:result["reference_validation"]=json.loads(rp.read_text())
         except ValueError:result["reference_validation"]={"passed":False}
+    suite_sha=(result.get("provenance") or {}).get("git_sha")
+    reference_gate=_reference_ok(result,seed) if result.get("reference_validation") is not None else None
+    for task in result["tasks"]:
+        task["reference_validation_passed"]=None
+        if result.get("reference_validation") is not None:
+            item=next((x for x in result["reference_validation"].get("tasks",[]) if x.get("family")==task.get("family")),{})
+            task["reference_validation_passed"]=bool(reference_gate and item.get("score")==100.0 and item.get("check_vector")==[True]*CHECK_COUNT and item.get("visible_check_vector")==[True]*CHECK_COUNT)
     rg=_reference_ok(result,seed)
     result["gates"]={"provenance":bool(result.get("provenance")),"headroom":all(x["headroom_passed"] for x in result["tasks"]),"visible_controller_parity":all(x["visible_controller_agree"] and len(x["baseline_check_vector"])==CHECK_COUNT for x in result["tasks"]),"deterministic_hashes":all(x["deterministic_hash_passed"] for x in result["tasks"]),"reference_validation":rg if require_reference else "not_required"}
+    result["validation_consistency"]=validation_consistency(result,reference_required=require_reference,check_count=CHECK_COUNT)
+    result["gates"]["validation_consistency"]=result["validation_consistency"]["ok"]
     result["ok"]=all(x is True for x in result["gates"].values())
     vd=state_root()/"validation";vd.mkdir(parents=True,exist_ok=True,mode=0o700);(vd/"preflight.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n");(state_root()/"VALIDATION_REPORT.md").write_text("# Public Characterization V2.1 validation\n\nOverall gate result: "+str(result["ok"]).lower()+"\n")
     return result

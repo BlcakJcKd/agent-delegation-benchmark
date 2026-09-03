@@ -19,14 +19,14 @@ ROOT_ARTIFACTS = (
     "AUDIT_REPORT.md", "CORRECTED_REPORT.md", "telemetry-semantics.md",
     "token-semantics.md", "task-check-matrix.md", "task-check-matrix.csv",
     "configuration-summary.json",
-    "VALIDATION_REPORT.md",
+    "VALIDATION_REPORT.md", "calibration-summary.json",
 )
 OPTIONAL_PLOTS = (
     "reasoning-correctness.png", "reasoning-wall.png", "score-vs-wall.png",
     "tokens-vs-correctness.png", "baseline-vs-final.png", "delta-by-configuration.png",
     "final-vs-wall.png", "final-vs-tokens.png",
 )
-OPTIONAL_DIRS = ("provenance", "validation", "task-specifications", "verifier-contracts", "edit-scopes")
+OPTIONAL_DIRS = ("provenance", "validation", "task-specifications", "verifier-contracts", "edit-scopes", "calibration-evidence")
 PUBLIC_SNAPSHOT_DIR = "baseline-task-snapshots"
 REQUESTED_SEMANTICS = {
     "request_metric_semantics", "tool_event_telemetry", "token_metric_semantics",
