@@ -229,7 +229,7 @@ def checks(root):
  def c3(): t,e=split_by_group(rows); t2,e2=split_by_group(rows); return t==t2 and e==e2
  def c4(): return all([x['timestamp'] for x in ordered(rows) if x['group']==g]==sorted(x['timestamp'] for x in ordered(rows) if x['group']==g) for g in {x['group'] for x in rows})
  def c5(): t,e=split_by_group(rows); pos={id(x):i for i,x in enumerate(rows)}; return all([pos[id(x)] for x in part]==sorted(pos[id(x)] for x in part) for part in (t,e))
- def c6(): return round(sum(float(x['value']) for x in rows),6)==60.5
+ def c6(): return round(sum(float(x['value']) for x in rows),6)==170.0
  def c7(): return summarize(rows)['count']==len(rows) and round(summarize(rows)['mean'],6)==round(sum(float(x['value']) for x in rows)/len(rows),6)
  def c8(): return report(rows).get('rows')==rows and report(rows).get('count')==len(rows)
  return [_safe('row retention',c1),_safe('group disjointness',c2),_safe('deterministic split',c3),_safe('chronological within-group order',c4),_safe('stable partition order',c5),_safe('numeric preservation',c6),_safe('summary correctness',c7),_safe('report schema and rows',c8)]

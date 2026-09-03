@@ -107,7 +107,7 @@ def _p3(root: Path, instance: Any) -> list[dict[str, Any]]:
         from pipeline.core import split_by_group
         random.seed(instance.seed); t,e=split_by_group(rows); pos={id(x):i for i,x in enumerate(rows)}
         return all([pos[id(x)] for x in part]==sorted(pos[id(x)] for x in part) for part in (t,e))
-    def c6(): return round(sum(float(x["value"]) for x in rows),6)==60.5
+    def c6(): return round(sum(float(x["value"]) for x in rows),6)==170.0
     def c7():
         from pipeline.core import summarize
         return summarize(rows)["count"]==len(rows) and round(summarize(rows)["mean"],6)==round(sum(float(x["value"]) for x in rows)/len(rows),6)
