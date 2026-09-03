@@ -30,14 +30,16 @@ def _safe(name: str, fn) -> dict[str, Any]:
 def _new_checks(root: Path) -> list[dict[str, Any]]:
     _clean_modules()
     sys.path.insert(0, str(root))
+    from inventory.api import InventoryAPI
     from inventory.service import InventoryService
 
     records = json.loads((root / "data/products.json").read_text())
 
     def c1():
         service = InventoryService(records)
-        token = service.create_snapshot("baseline")
-        return token["name"] == "baseline" and [x.identifier for x in service.list_products_at(token)] == [17, 44, 63, 88, 101]
+        api = InventoryAPI(service)
+        token = api.create_snapshot("baseline")
+        return token["name"] == "baseline" and [x.identifier for x in api.snapshot_products(token)] == [17, 44, 63, 88, 101]
 
     def c2():
         service = InventoryService(records)

@@ -450,6 +450,7 @@ def _make(seed: int) -> TaskInstance:
                 return build_snapshot_report(products, version=token[\"version\"], snapshot=token[\"name\"])
         """,
         "inventory/api.py": """
+        from .errors import UnsupportedFeature
         from .service import InventoryService
 
         class InventoryAPI:
@@ -464,6 +465,24 @@ def _make(seed: int) -> TaskInstance:
 
             def current_report(self, category=None):
                 return self.service.report(category)
+
+            def create_snapshot(self, name):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def snapshot_products(self, snapshot, category=None):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def snapshot_report(self, snapshot, category=None):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def export_snapshot(self, snapshot):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def restore_snapshot(self, payload):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
+
+            def snapshot_names(self):
+                raise UnsupportedFeature("named snapshots are not in the old contract")
         """,
         "tests/test_old_contract.py": """
         import unittest
@@ -511,6 +530,7 @@ def _make(seed: int) -> TaskInstance:
 
 
 CONTRACT = """import json
+from inventory.api import InventoryAPI
 def _safe(name, fn):
  try: return {\"name\":name,\"passed\":bool(fn()),\"detail\":\"\"}
  except Exception as exc: return {\"name\":name,\"passed\":False,\"detail\":type(exc).__name__}
@@ -519,7 +539,7 @@ def checks(root):
  from inventory.service import InventoryService
  records=_records(root)
  def c1():
-  s=InventoryService(records); token=s.create_snapshot(\"baseline\"); return token[\"name\"]==\"baseline\" and [x.identifier for x in s.list_products_at(token)]==[17,44,63,88,101]
+  s=InventoryService(records); api=InventoryAPI(s); token=api.create_snapshot(\"baseline\"); return token[\"name\"]==\"baseline\" and [x.identifier for x in api.snapshot_products(token)]==[17,44,63,88,101]
  def c2():
   s=InventoryService(records); token=s.create_snapshot(\"before\"); s.mutate(101,{**records[0],\"amount\":20.25}); return s.summary()[\"total\"]==39.5 and s.snapshot_report(token)[\"summary\"][\"total\"]==31.5
  def c3():
