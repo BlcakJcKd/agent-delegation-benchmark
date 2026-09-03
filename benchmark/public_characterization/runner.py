@@ -246,6 +246,13 @@ def run_sweep() -> dict[str, Any]:
     if agy["eligibility"].get("public_characterization") != "supported":
         raise RuntimeError("AGY public characterization eligibility is not supported")
     conn = connect()
+    for audited in registry:
+        record_harness(
+            conn, audited["name"], version=audited.get("observed_version") or audited["version"],
+            adapter_version="ekalavya.harness_registry", transport=audited["transport"],
+            capabilities=audited["capabilities"], eligibility=audited["eligibility"],
+            evidence_label=audited["evidence"], observed_at=discovery["timestamp"],
+        )
     harness_id = record_harness(conn, "agy", version=discovery["client_version"], adapter_version="benchmark.adapters.AntigravityAdapter", transport="agy", capabilities=agy["capabilities"], eligibility=agy["eligibility"], evidence_label="public_characterization_non_adversarial", observed_at=discovery["timestamp"])
     instances = [make_instance(family, 20260903 + index) for index, family in enumerate(FAMILIES)]
     git_sha = command(["git", "rev-parse", "HEAD"])[1].strip()
