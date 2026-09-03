@@ -13,4 +13,4 @@ eka = "ekalavya.cli:main"
 ekalavya = "ekalavya.cli:main"
 
 [tool.setuptools]
-packages = ["delegation", "ekalavya", "benchmark", "benchmark.v2", "benchmark.public_characterization"]
+packages = ["delegation", "ekalavya", "benchmark", "benchmark.v2", "benchmark.public_characterization", "benchmark.public_characterization_v23"]
