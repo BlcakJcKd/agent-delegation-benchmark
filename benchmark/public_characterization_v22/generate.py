@@ -241,8 +241,7 @@ def checks(root):
   a,b=split(rows,seed=17); a2,b2=split(rows,seed=17); return a==a2 and b==b2 and {r['group'] for r in a}.isdisjoint({r['group'] for r in b})
  def c5():
   a,b=partition(rows,seed=17); original={(r['group'],r['timestamp'],r['replicate']) for r in rows}; parts={(r['group'],r['timestamp'],r['replicate']) for r in a+b}; return len(a)+len(b)==len(rows) and parts==original and all([r['timestamp'] for r in part if r['group']==g]==sorted(r['timestamp'] for r in part if r['group']==g) for part in (a,b) for g in {r['group'] for r in part})
- def c6():
-  s=summarize(rows); return s['count']==25 and abs(s['total']-sum(r['value'] for r in rows))<1e-9 and abs(s['mean']-sum(r['value'] for r in rows)/25)<1e-9
+ def c6(): raw_total=sum(float(line.split(',')[2]) for line in (root/'data/measurements.csv').read_text().splitlines()[1:]); s=summarize(rows); return s['count']==25 and abs(s['total']-raw_total)<1e-9 and abs(s['mean']-raw_total/25)<1e-9
  def c7():
   result=execute(path,seed=17); return len(result['train'])+len(result['test'])==25 and result['summary']['count']==25 and {r['group'] for r in result['train']}.isdisjoint({r['group'] for r in result['test']})
  def c8():
