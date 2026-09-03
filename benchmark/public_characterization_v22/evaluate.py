@@ -46,7 +46,7 @@ def _p1(root: Path):
     def c6():
         service=InventoryService(rows); first=service.query("alpha","hardware"); service.mutate(30,{**rows[0],"amount":rows[0]["amount"]+1}); second=service.query(" alpha ","hardware"); return [x.id for x in first["items"]]==[20,30] and second["summary"]["total"]==first["summary"]["total"]+1
     def c7():
-        service=InventoryService(rows); service.query("alpha"); service.mutate(30,{**rows[0],"amount":rows[0]["amount"]+1}); service.mutate(50,{**rows[4],"amount":rows[4]["amount"]+2}); report=build_report(service,[("alpha",None),("beta",None)]); return report["version"]==2 and len(report["queries"])==2 and report["queries"][0]["summary"]["total"]>0
+        service=InventoryService(rows); before=sum(float(x["amount"]) for x in rows if x["name"].strip().lower()=="alpha"); service.query("alpha"); service.mutate(30,{**rows[0],"amount":rows[0]["amount"]+1}); service.mutate(50,{**rows[4],"amount":rows[4]["amount"]+2}); report=build_report(service,[("alpha",None),("beta",None)]); return report["version"]==2 and len(report["queries"])==2 and abs(report["queries"][0]["summary"]["total"]-(before+3))<1e-9
     def c8():
         service=InventoryService(rows); report=build_report(service,[("alpha","hardware"),("alpha","software")]); return set(report)=={"version","queries"} and len(report["queries"])==2 and report["queries"][0]["summary"]["count"]==2 and report["queries"][1]["summary"]["count"]==1
     return [_safe("domain parsing",c1),_safe("versioned cache sequences",c2),_safe("cache invalidation",c3),_safe("normalized catalogue search",c4),_safe("fractional aggregation",c5),_safe("service composition",c6),_safe("stateful report evolution",c7),_safe("report schema and category isolation",c8)]

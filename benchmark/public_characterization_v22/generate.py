@@ -74,7 +74,7 @@ class Item:
  name:str
  category:str
  amount:float
-def item_from_record(record): return Item(int(record['id']),record['name'],record['category'],float(record['amount']))
+def item_from_record(record): return Item(int(record['id']),record['name'],record['category'],int(float(record['amount'])))
 """,
       "storage/__init__.py":"from .repository import Repository\nfrom .versioning import current_version\n",
       "storage/repository.py":"""from copy import deepcopy
@@ -147,7 +147,7 @@ Repair the layered schema, loader, normalization, ordering, group policy, split,
       "tests/test_contract.py":"from pipeline.run import execute\ndef test_import(): assert execute\n",
       "dataio/__init__.py":"from .loader import load_rows\nfrom .schema import validate_row\n",
       "dataio/schema.py":"""def validate_row(row): return set(row)=={'group','timestamp','value','replicate'}
-def coerce_row(row): return {'group':row['group'],'timestamp':row['timestamp'],'value':float(row['value']),'replicate':int(row['replicate'])}
+def coerce_row(row): return {'group':row['group'],'timestamp':row['timestamp'],'value':int(float(row['value'])),'replicate':int(row['replicate'])}
 """,
       "dataio/loader.py":"""import csv
 from pathlib import Path
@@ -213,7 +213,7 @@ def checks(root):
  def c6():
   service=InventoryService(rows); first=service.query('alpha','hardware'); service.mutate(30,{**rows[0],'amount':rows[0]['amount']+1}); second=service.query(' alpha ','hardware'); return [x.id for x in first['items']]==[20,30] and second['summary']['total']==first['summary']['total']+1
  def c7():
-  service=InventoryService(rows); service.query('alpha'); service.mutate(30,{**rows[0],'amount':rows[0]['amount']+1}); service.mutate(50,{**rows[4],'amount':rows[4]['amount']+2}); report=build_report(service,[('alpha',None),('beta',None)]); return report['version']==2 and len(report['queries'])==2 and report['queries'][0]['summary']['total']>0
+  service=InventoryService(rows); before=sum(float(x['amount']) for x in rows if x['name'].strip().lower()=='alpha'); service.query('alpha'); service.mutate(30,{**rows[0],'amount':rows[0]['amount']+1}); service.mutate(50,{**rows[4],'amount':rows[4]['amount']+2}); report=build_report(service,[('alpha',None),('beta',None)]); return report['version']==2 and len(report['queries'])==2 and abs(report['queries'][0]['summary']['total']-(before+3))<1e-9
  def c8():
   service=InventoryService(rows); report=build_report(service,[('alpha','hardware'),('alpha','software')]); return set(report)=={'version','queries'} and len(report['queries'])==2 and report['queries'][0]['summary']['count']==2 and report['queries'][1]['summary']['count']==1
  return [_safe('domain parsing',c1),_safe('versioned cache sequences',c2),_safe('cache invalidation',c3),_safe('normalized catalogue search',c4),_safe('fractional aggregation',c5),_safe('service composition',c6),_safe('stateful report evolution',c7),_safe('report schema and category isolation',c8)]
