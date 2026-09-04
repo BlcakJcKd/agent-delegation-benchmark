@@ -30,7 +30,7 @@ PROVIDER_LABELS: dict[str, str] = {
     "deepseek": "DeepSeek", "minimax": "MiniMax",
 }
 MODEL_LABELS: dict[str, str] = {
-    "flash": "Flash", "sonnet": "Sonnet", "haiku": "Haiku", "terra": "Terra", "luna": "Luna",
+    "flash": "Gemini Flash", "sonnet": "Claude Sonnet", "haiku": "Claude Haiku", "terra": "Codex Terra", "luna": "Codex Luna",
     "deepseek-pro": "DeepSeek V4 Pro", "deepseek-flash": "DeepSeek V4 Flash",
     "minimax-m3": "MiniMax M3",
 }

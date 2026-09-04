@@ -46,6 +46,17 @@ class BuildRowsTests(unittest.TestCase):
         self.assertFalse(codex_row.enabled)
         self.assertEqual(codex_row.reason, "quota low")
 
+    def test_display_labels_do_not_rename_stable_profile_ids(self):
+        rows = build_rows(default_config())
+        labels = {row.name: row.label for row in rows if row.kind == "model"}
+        self.assertEqual(labels["flash"], "Gemini Flash")
+        self.assertEqual(labels["haiku"], "Claude Haiku")
+        self.assertEqual(labels["sonnet"], "Claude Sonnet")
+        self.assertEqual(labels["luna"], "Codex Luna")
+        self.assertEqual(labels["terra"], "Codex Terra")
+        self.assertEqual(labels["flash"], "Gemini Flash")
+        self.assertEqual({row.name for row in rows if row.kind == "model"} & {"flash", "haiku", "sonnet", "luna", "terra"}, {"flash", "haiku", "sonnet", "luna", "terra"})
+
     def test_sections_are_separate_and_provider_disable_does_not_disable_model_preference(self):
         config = set_enabled(default_config(), "providers", "deepseek", False, reason="peak hours")
         config = set_enabled(config, "models", "deepseek-flash", True)
