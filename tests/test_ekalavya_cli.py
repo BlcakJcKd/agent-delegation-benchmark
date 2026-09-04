@@ -34,6 +34,19 @@ class EkalavyaCliTests(unittest.TestCase):
             self.assertEqual(payload["primary"], "codex")
             self.assertIn("routing", payload)
 
+    def test_status_human_view_shows_provider_and_effective_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self._files(root)
+            report = {"config_path": "config", "vllm_config_path": "vllm", "state_log_path": "state", "runtime_version": "test", "skill": {"source_installed": False, "source_path": "skill", "claude_code_discovers": False}, "declared_primary": "manual", "quota": "unknown", "routes": [{"route": "deepseek-flash", "provider": "deepseek", "transport": "codex", "billing": "payg", "maturity": "experimental", "configured_enabled": True, "configured_reason": None, "provider_enabled": False, "provider_reason": "peak hours", "effective_enabled": False, "route_type": "external", "effective": "disabled", "effective_reason": "peak hours", "model": None, "shared_compute": None, "max_concurrency": None, "thinking_default": None, "default_max_tokens": None, "max_tokens_cap": None}]}
+            with self._xdg(root), patch("ekalavya.cli.build_report", return_value=report):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(main(["status"]), 0)
+            text = output.getvalue()
+            self.assertIn("Model cfg", text)
+            self.assertIn("disabled", text)
+            self.assertIn("peak hours", text)
+
     def test_config_mutation_is_explicit_and_json(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); self._files(root)

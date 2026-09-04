@@ -16,7 +16,7 @@ from typing import Any
 
 from delegation import routing
 from delegation.config import load_config, save_config, set_enabled
-from delegation.status_cli import build_report
+from delegation.status_cli import _print_human, build_report
 from delegation.vllm import inspect_vllm_routes
 
 from . import __version__
@@ -131,7 +131,11 @@ def cmd_status(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"status error: {exc}", file=sys.stderr); return 2
     result = {"product": "Ekalavya", "version": __version__, "primary": getattr(args, "primary", None), "config_root": str(root), "ledger": str(default_db_path()), "profiles": [{"name": p.get("name"), "default": p.get("default_identity_key"), "reasoning_policy": p.get("reasoning_policy", "overrideable"), "availability": "configured" if p.get("default_identity_key") else "not-configured"} for p in profiles], "catalogue": [{k: e.get(k) for k in ("provider", "family", "provider_model_id", "lifecycle", "identity_key")} for e in entries], "routing": routing_report}
-    _json_or_text(result, args.json); return 0
+    if args.json:
+        _json_or_text(result, True)
+    else:
+        _print_human(routing_report)
+    return 0
 
 
 def cmd_profiles(args: argparse.Namespace) -> int:
