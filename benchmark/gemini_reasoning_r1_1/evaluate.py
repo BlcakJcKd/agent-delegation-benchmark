@@ -115,7 +115,7 @@ def _r2(workspace: Path) -> list[Callable[[], Any]]:
     def c1():
         from clientkit.client import Client
         from clientkit.legacy import old_client
-        value = old_client("https://example.test"); return isinstance(value, Client) and (value.timeout, value.retries) == (30, 2)
+        value = old_client("https://service.example.test"); return isinstance(value, Client) and (value.timeout, value.retries) == (30, 2)
     def c2():
         from clientkit.client import Client
         return Client("service.example").request("/c", timeout=17).timeout == 17
@@ -124,7 +124,7 @@ def _r2(workspace: Path) -> list[Callable[[], Any]]:
         return Client("service.example", retries=3).request("/write", idempotent=False).attempts == 1
     def c4():
         from clientkit.factory import make_client
-        value = make_client("x", timeout=11, retries=4); return (value.timeout, value.retries) == (11, 4)
+        value = make_client("service.example", timeout=11, retries=4); return (value.timeout, value.retries) == (11, 4)
     def c5():
         from clientkit.client import Client
         from clientkit.legacy import old_client
