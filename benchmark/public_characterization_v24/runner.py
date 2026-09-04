@@ -364,6 +364,22 @@ def report(root: Path | None = None) -> dict[str, Any]:
     (root / "REPORT.md").write_text(f"# {SUITE_NAME}\n\nEvaluation class: `{EVALUATION_CLASS}`. Actual requested/report timeout: `{timeout}` seconds. Calibration attempts: `{len(calibration)}`. Comparative characterization: `not run`.\n\nV2.3 audit note: retained execution evidence consistently records 420 seconds; the stale 900-second summary came from an older plan/default and was not an executed V2.3 budget. V2.3 is preserved as valid, saturated, feature-scaffolding-heavy calibration evidence.\n\nV2.4 uses a mature synthetic correct baseline plus a novel owner-scoped named-report-bookmark feature. Its public issue/verifier remain behavioral; the controller retains structural and absence gates.\n")
     (root / "AUDIT_REPORT.md").write_text("# Public Characterization V2.4 audit\n\nV2.4 is a repository-scale feature-integration calibration. Calibration is excluded from model-ranking statistics. No comparative run is authorized by this task.\n")
     (root / "VALIDATION_REPORT.md").write_text((root / "validation/preflight.json").read_text() if (root / "validation/preflight.json").is_file() else "Validation metadata not yet generated.\n")
+    validation = root / "validation"
+    validation.mkdir(parents=True, exist_ok=True)
+    preflight = {}
+    if (validation / "preflight.json").is_file():
+        try:
+            preflight = json.loads((validation / "preflight.json").read_text())
+        except (OSError, ValueError):
+            preflight = {}
+    task = (preflight.get("tasks") or [{}])[0]
+    (validation / "implementation-surface.json").write_text(json.dumps(task.get("implementation_surface", {}), indent=2, sort_keys=True) + "\n")
+    (validation / "feature-absence.json").write_text(json.dumps(task.get("feature_absence", {}), indent=2, sort_keys=True) + "\n")
+    (validation / "feature-scaffolding-leakage.json").write_text(json.dumps(task.get("feature_scaffolding_leakage", {}), indent=2, sort_keys=True) + "\n")
+    reference = preflight.get("reference_validation") or {}
+    (validation / "structural-validation-summary.json").write_text(json.dumps(reference.get("structural_validation", {}), indent=2, sort_keys=True) + "\n")
+    (validation / "gold-accessibility.json").write_text(json.dumps(reference.get("gold_accessibility", {}), indent=2, sort_keys=True) + "\n")
+    (validation / "old-contract-summary.json").write_text(json.dumps({"before": task.get("old_contract_tests_passed_before"), "calibration_after": [(row.get("old_contract_tests_passed_after"), row.get("old_contract_regressions")) for row in rows]}, indent=2, sort_keys=True) + "\n")
     return {"timeout_seconds": timeout, "calibration_attempts": len(calibration), "calibration_useful": useful, "comparative_ran": False, "plots": plots}
 
 
