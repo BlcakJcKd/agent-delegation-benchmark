@@ -687,6 +687,7 @@ def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dic
         test = test.replace("'/a'", "'/c'").replace("'/b'", "'/d'")
         test = test.replace("'https://example.test'", "'https://service.example.test'")
         test = test.replace("timeout=7", "timeout=17")
+        test = test.replace("timeout=17).timeout, 7", "timeout=17).timeout, 17")
         test = test.replace("'base_url': 'x'", "'base_url': 'service.example'")
         test = test.replace("Client('x')", "Client('service.example')")
         test = test.replace("Client('x',", "Client('service.example',")
@@ -702,6 +703,7 @@ def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dic
             ("49.0", "50.0"), ("49.0 / 9.0", "50.0 / 9.0"),
         )
         files = {name: _replace_all(content, replacements) for name, content in files.items()}
+        files["tests/test_contract.py"] = files["tests/test_contract.py"].replace("self.rows[0].group, 'indigo'", "self.rows[0].group, 'amber'")
     elif family == "R4_config_state":
         files["tests/test_contract.py"] = _replace_all(files["tests/test_contract.py"], (("'ada'", "'eve'"), ("'lin'", "'zoe'")))
     return files, prompt + "\nThis is a fresh matched R1.1 task variant; preserve the same observable contract."
