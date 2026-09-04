@@ -5,6 +5,7 @@ from pathlib import Path
 from benchmark.gemini_reasoning_r1 import FAMILIES, SEEDS, SUITE_NAME, TIMEOUT_SECONDS
 from benchmark.gemini_reasoning_r1.evaluate import evaluate, visible_check_vector
 from benchmark.gemini_reasoning_r1.generate import make_instance, materialize, task_hashes
+from benchmark.gemini_reasoning_r1.runner import _allowed
 
 
 class GeminiReasoningR1Tests(unittest.TestCase):
@@ -41,6 +42,13 @@ class GeminiReasoningR1Tests(unittest.TestCase):
             self.assertNotIn("gold patch", source)
             self.assertNotIn("reference implementation", source)
             self.assertNotIn("apply_patch", source)
+
+    def test_recursive_edit_scope_allows_direct_and_nested_source_files(self):
+        instance = make_instance("R1_maintenance", SEEDS["R1_maintenance"])
+        self.assertTrue(_allowed("inventory/storage.py", instance))
+        self.assertTrue(_allowed("inventory/subpackage/extra.py", instance))
+        self.assertFalse(_allowed("tests/test_contract.py", instance))
+        self.assertFalse(_allowed("data/items.json", instance))
 
 
 if __name__ == "__main__":

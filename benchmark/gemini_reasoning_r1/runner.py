@@ -200,7 +200,17 @@ def _terminate(process: subprocess.Popen[str]) -> None:
 
 
 def _allowed(path: str, instance: TaskInstance) -> bool:
-    return any(fnmatch.fnmatch(path, pattern) or path.startswith(pattern.rstrip("*") + "/") for pattern in instance.editable)
+    for pattern in instance.editable:
+        if fnmatch.fnmatch(path, pattern) or path.startswith(pattern.rstrip("*") + "/"):
+            return True
+        # fnmatch treats ** as ordinary punctuation.  Interpret the common
+        # recursive form explicitly so `inventory/**/*.py` also allows a
+        # directly contained `inventory/storage.py`.
+        if "/**/" in pattern:
+            prefix, suffix = pattern.split("/**/", 1)
+            if path.startswith(prefix + "/") and fnmatch.fnmatch(path[len(prefix) + 1:], suffix):
+                return True
+    return False
 
 
 def _identity(model_id: str, reasoning: str, version: str) -> dict[str, Any]:
