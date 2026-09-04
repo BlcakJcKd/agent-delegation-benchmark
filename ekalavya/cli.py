@@ -24,7 +24,7 @@ from .catalogue import PROMOTION_BASES, load_catalogue, promote, save_catalogue
 from .config import config_root, migrate_legacy_config
 from .executor import execute
 from .harness_registry import current_registry, validate_registry
-from .ledger import connect, default_db_path, finalize_run, record_availability, record_promotion_event, record_resolution, record_run, upsert_model
+from .ledger import connect, default_db_path, finalize_run, record_availability, record_default_change, record_promotion_event, record_resolution, record_run, upsert_model
 from .migrate import migrate_all
 from .resolver import resolve
 from benchmark.review_bundle import create_review_bundle
@@ -164,6 +164,7 @@ def cmd_models(args: argparse.Namespace) -> int:
             if profile is None:
                 print(f"unknown profile: {profile_name}", file=sys.stderr)
                 return 2
+            old_default_identity_key = profile.get("default_identity_key")
             profile["default_identity_key"] = target
             if getattr(args, "default_reasoning", None):
                 profile["default_reasoning"] = args.default_reasoning
@@ -176,6 +177,8 @@ def cmd_models(args: argparse.Namespace) -> int:
         save_catalogue(path, updated)
         conn = connect()
         record_promotion_event(conn, target, from_state=match.get("lifecycle"), to_state="current", reason=reason, promotion_basis=args.basis)
+        if getattr(args, "set_default", False) and old_default_identity_key != target:
+            record_default_change(conn, profile_name, old_identity_key=old_default_identity_key, new_identity_key=target, reason=reason)
         _json_or_text({"action": "promote", "identity_key": target, "promotion_basis": args.basis, "promotion_reason": reason, "set_default": bool(getattr(args, "set_default", False))}, args.json)
         return 0
     if getattr(args, "action", None) == "refresh":

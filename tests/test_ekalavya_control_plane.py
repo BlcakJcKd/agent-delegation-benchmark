@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ekalavya.catalogue import PROMOTION_BASES, add_candidate, promote, selectable
 from ekalavya.config import ensure_control_files, migrate_legacy_config
-from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_benchmark_suite_correction, record_benchmark_task, record_cost, record_harness, record_price_snapshot, record_promotion_event, record_request_metric, record_run, record_task_attempt, upsert_model
+from ekalavya.ledger import SCHEMA_SQL, connect, import_legacy_state, record_benchmark_suite, record_benchmark_suite_correction, record_benchmark_task, record_cost, record_default_change, record_harness, record_price_snapshot, record_promotion_event, record_request_metric, record_run, record_task_attempt, upsert_model
 from ekalavya.resolver import resolve
 from ekalavya.schema import CandidateIdentity, RunIntent
 
@@ -42,6 +42,13 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
             self.assertEqual(tuple(row), ("candidate", "current", "efficiency evidence", "operational_efficiency"))
             with self.assertRaises(ValueError):
                 record_promotion_event(conn, "x", from_state="candidate", to_state="current", reason="bad", promotion_basis="quality_claim_not_measured")
+
+    def test_default_change_is_explicitly_auditable(self):
+        with tempfile.TemporaryDirectory() as d:
+            conn = connect(Path(d) / "ledger.sqlite3")
+            event_id = record_default_change(conn, "flash", old_identity_key="old", new_identity_key="new", reason="operational efficiency", occurred_at="2026-09-04T00:00:00+00:00")
+            row = conn.execute("SELECT profile,old_identity_key,new_identity_key,reason FROM default_changes WHERE id=?", (event_id,)).fetchone()
+            self.assertEqual(tuple(row), ("flash", "old", "new", "operational efficiency"))
 
     def test_resolver_does_not_fail_over_and_enforces_native(self):
         c1 = CandidateIdentity("gemini", "gemini", "flash", capabilities={"reasoning_values": ["low", "high"]})

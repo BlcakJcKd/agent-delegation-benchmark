@@ -177,6 +177,24 @@ def record_promotion_event(
     return int(cursor.lastrowid)
 
 
+def record_default_change(
+    conn: sqlite3.Connection,
+    profile: str,
+    *,
+    old_identity_key: str | None,
+    new_identity_key: str,
+    reason: str,
+    occurred_at: str | None = None,
+) -> int:
+    """Record an explicit user-owned profile default change."""
+    cursor = conn.execute(
+        "INSERT INTO default_changes(profile,old_identity_key,new_identity_key,occurred_at,reason) VALUES(?,?,?,?,?)",
+        (profile, old_identity_key, new_identity_key, occurred_at or datetime.now(timezone.utc).isoformat(), reason),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
 def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None, capabilities: dict[str, Any] | None = None, telemetry: dict[str, Any] | None = None, eligibility: dict[str, str] | None = None, evidence_label: str | None = None, observed_at: str | None = None) -> int:
     encoded_capabilities = json.dumps(capabilities, sort_keys=True) if capabilities is not None else None
     encoded_telemetry = json.dumps(telemetry, sort_keys=True) if telemetry is not None else None
