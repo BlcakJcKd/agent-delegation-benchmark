@@ -685,7 +685,7 @@ def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dic
     elif family == "R2_api_compat":
         test = files["tests/test_contract.py"]
         test = test.replace("'/a'", "'/c'").replace("'/b'", "'/d'")
-        test = test.replace("'https://example.test'", "'https://service.example.test'")
+        test = test.replace("'https://example.test'", "'https://example.test'")
         test = test.replace("timeout=7", "timeout=17")
         test = test.replace("timeout=17).timeout, 7", "timeout=17).timeout, 17")
         test = test.replace("'base_url': 'x'", "'base_url': 'service.example'")
