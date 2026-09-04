@@ -51,6 +51,19 @@ def _safe_detail(exc: BaseException) -> str:
     return text[:400]
 
 
+def _purge_workspace_modules(workspace: Path) -> None:
+    root = workspace.resolve()
+    for name, module in list(sys.modules.items()):
+        module_path = getattr(module, "__file__", None)
+        if not module_path:
+            continue
+        try:
+            Path(module_path).resolve().relative_to(root)
+        except (OSError, ValueError):
+            continue
+        sys.modules.pop(name, None)
+
+
 def _visible_tests(workspace: Path) -> dict[str, Any]:
     env = {**os.environ, "PYTHONPATH": str(workspace)}
     try:
@@ -198,6 +211,7 @@ def evaluate(instance: TaskInstance, workspace: Path) -> dict[str, Any]:
     finally:
         if sys.path and sys.path[0] == workspace_text:
             sys.path.pop(0)
+        _purge_workspace_modules(workspace)
     if len(checks) != 8:
         raise ValueError(f"malformed evaluator vector: expected 8, got {len(checks)}")
     passed = sum(item["passed"] for item in checks)
