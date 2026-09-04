@@ -681,10 +681,13 @@ def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dic
             ("6.00", "9.00"), ("5.75", "10.00"),
         )
         files = {name: _replace_all(content, replacements) for name, content in files.items()}
+        files["tests/test_contract.py"] = files["tests/test_contract.py"].replace("' alpha '", "' gamma '")
     elif family == "R2_api_compat":
         test = files["tests/test_contract.py"]
         test = test.replace("'/a'", "'/c'").replace("'/b'", "'/d'")
         test = test.replace("'https://example.test'", "'https://service.example.test'")
+        test = test.replace("timeout=7", "timeout=17")
+        test = test.replace("'base_url': 'x'", "'base_url': 'service.example'")
         test = test.replace("Client('x')", "Client('service.example')")
         test = test.replace("Client('x',", "Client('service.example',")
         test = test.replace("old_client('x',", "old_client('service.example',")

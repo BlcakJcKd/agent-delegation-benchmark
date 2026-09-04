@@ -161,7 +161,7 @@ def _r3(workspace: Path) -> list[Callable[[], Any]]:
         from experiment.pipeline import run
         value = result(); again = run(workspace / "data/measurements.csv", seed=1); return value["train"] == again["train"] and value["evaluation"] == again["evaluation"]
     def c7():
-        rows = result()["rows"]; return rows[0].group == "amber" and {r.quality for r in rows} == {"ok"}
+        rows = result()["rows"]; return rows[0].group == "indigo" and {r.quality for r in rows} == {"ok"}
     def c8():
         value = result(); report = value["report"]; return report["schema"] == "experiment-v1" and report["train"] + report["evaluation"] == 9 and set(report["train_groups"]) | set(report["evaluation_groups"]) == {"amber", "cobalt", "indigo"}
     return [c1, c2, c3, c4, c5, c6, c7, c8]
