@@ -1,4 +1,4 @@
-"""Freeze, run, and report the bounded Gemini 3.8 R1 screen."""
+"""Freeze, run, and report the bounded Gemini 3.8 R1.1 screen."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ def _edit_scope_validation(items: list[TaskInstance]) -> dict[str, Any]:
     for instance in items:
         source = next(name for name in instance.files if name.endswith('.py') and not name.startswith('tests/'))
         nested = f"{source.split('/', 1)[0]}/nested/{source.rsplit('/', 1)[-1]}"
-        immutable = next(iter(instance.immutable))
+        immutable = next(name for name in instance.files if name.startswith("tests/"))
         checks = {
             "allowed_direct_source": _scope_match(source, instance),
             "allowed_nested_source": _scope_match(nested, instance) if any("**" in p for p in instance.editable) else True,
@@ -299,7 +299,7 @@ def run_sweep() -> dict[str, Any]:
     if provenance["git_sha"] != preflight["provenance"]["git_sha"]:
         raise RuntimeError("provenance changed after freeze")
     registry = current_registry(); validate_registry(registry); agy = next(item for item in registry if item["name"] == "agy")
-    conn = connect(); harness_id = record_harness(conn, "agy", version=discovery["client_version"], adapter_version="benchmark.adapters.AntigravityAdapter", transport="agy", capabilities=agy["capabilities"], telemetry=agy["telemetry"], eligibility=agy["eligibility"], evidence_label="gemini_3.8_reasoning_r1", observed_at=discovery["timestamp"])
+    conn = connect(); harness_id = record_harness(conn, "agy", version=discovery["client_version"], adapter_version="benchmark.adapters.AntigravityAdapter", transport="agy", capabilities=agy["capabilities"], telemetry=agy["telemetry"], eligibility=agy["eligibility"], evidence_label="gemini_3.8_reasoning_r1_1", observed_at=discovery["timestamp"])
     task_records = {}
     items = instances()
     suite_id = record_benchmark_suite(conn, SUITE_NAME, "public_characterization", SUITE_VERSION, git_sha=provenance["git_sha"], evaluation_class=EVALUATION_CLASS, metadata={"models": MODELS, "reasoning": REASONING, "timeout_seconds": TIMEOUT_SECONDS})
