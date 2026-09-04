@@ -664,7 +664,49 @@ def make_instance(family: str, seed: int | None = None) -> TaskInstance:
     actual_seed = SEEDS[family] if seed is None else seed
     builders = {"R1_maintenance": _r1, "R2_api_compat": _r2, "R3_scientific_pipeline": _r3, "R4_config_state": _r4}
     files, prompt, editable, immutable = builders[family](actual_seed)
+    files, prompt = _fresh_variant(family, files, prompt)
     return TaskInstance(family, actual_seed, prompt, files, editable, immutable)
+
+
+def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dict[str, str], str]:
+    """Create R1.1 variants without changing their observable contracts."""
+    files = dict(files)
+    if family == "R1_maintenance":
+        replacements = (
+            ("A-10", "C-21"), ("A-2", "C-4"), ("B-3", "D-5"), ("B-12", "D-16"),
+            ("ALPHA", "GAMMA"), ("Alpha", "Gamma"), ("BETA", "DELTA"),
+            ("Beta", "Delta"), ("beta", "delta"), ("tools", "hardware"),
+            ("parts", "supplies"), ("4.25", "6.40"), ("1.75", "2.60"),
+            ("3.50", "5.30"), ("2.25", "4.70"), ("8.50", "10.20"),
+            ("6.00", "9.00"), ("5.75", "10.00"),
+        )
+        files = {name: _replace_all(content, replacements) for name, content in files.items()}
+    elif family == "R2_api_compat":
+        test = files["tests/test_contract.py"]
+        test = test.replace('"/a"', '"/c"').replace('"/b"', '"/d"')
+        test = test.replace('Client("x")', 'Client("service.example")')
+        test = test.replace('Client("x",', 'Client("service.example",')
+        test = test.replace('old_client("x",', 'old_client("service.example",')
+        test = test.replace('make_client("x",', 'make_client("service.example",')
+        files["tests/test_contract.py"] = test
+    elif family == "R3_scientific_pipeline":
+        replacements = (
+            ("north", "amber"), ("south", "cobalt"), ("east", "indigo"),
+            ("1.25", "1.125"), ("2.50", "2.875"), ("3.75", "3.625"),
+            ("4.25", "4.875"), ("5.50", "5.125"), ("6.75", "6.625"),
+            ("7.25", "7.875"), ("8.50", "8.125"), ("9.25", "9.75"),
+            ("49.0", "50.0"), ("49.0 / 9.0", "50.0 / 9.0"),
+        )
+        files = {name: _replace_all(content, replacements) for name, content in files.items()}
+    elif family == "R4_config_state":
+        files["tests/test_contract.py"] = _replace_all(files["tests/test_contract.py"], (("ada", "eve"), ("lin", "zoe")))
+    return files, prompt + "\nThis is a fresh matched R1.1 task variant; preserve the same observable contract."
+
+
+def _replace_all(value: str, replacements: tuple[tuple[str, str], ...]) -> str:
+    for old, new in replacements:
+        value = value.replace(old, new)
+    return value
 
 
 def materialize(instance: TaskInstance, workspace: Path) -> Path:

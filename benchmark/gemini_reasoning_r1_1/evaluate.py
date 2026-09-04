@@ -92,22 +92,22 @@ def _r1(workspace: Path) -> list[Callable[[], Any]]:
         return InventoryService(workspace / "data/items.json")
     def c1():
         from decimal import Decimal
-        return service().repository.all_items()[0].amount == Decimal("4.25")
+        return service().repository.all_items()[0].amount == Decimal("6.40")
     def c2():
-        value = service(); before = value.repository.version; value.replace_amount("A-10", Decimal("8.50")); return value.repository.version > before
+        value = service(); before = value.repository.version; value.replace_amount("C-21", Decimal("10.20")); return value.repository.version > before
     def c3():
-        value = service(); value.summary("tools"); before = value.cache.parse_count; value.summary("tools"); return value.cache.parse_count == before
+        value = service(); value.summary("hardware"); before = value.cache.parse_count; value.summary("hardware"); return value.cache.parse_count == before
     def c4():
-        value = service(); before = value.summary("tools")["total"]; value.replace_amount("A-10", Decimal("8.50")); return value.summary("tools")["total"] != before
+        value = service(); before = value.summary("hardware")["total"]; value.replace_amount("C-21", Decimal("10.20")); return value.summary("hardware")["total"] != before
     def c5():
-        value = service(); tools = value.summary("tools"); parts = value.summary("parts"); return tools["category"] != parts["category"] and value.summary("tools") == tools
+        value = service(); tools = value.summary("hardware"); parts = value.summary("supplies"); return tools["category"] != parts["category"] and value.summary("hardware") == tools
     def c6():
-        return {item.sku for item in service().search(" alpha ")} == {"A-10", "A-2"}
+        return {item.sku for item in service().search(" gamma ")} == {"C-21", "C-4"}
     def c7():
         from decimal import Decimal
-        return service().summary("tools")["total"] == Decimal("6.00")
+        return service().summary("hardware")["total"] == Decimal("9.00")
     def c8():
-        value = service(); report = value.report("BETA", "parts"); return report["skus"] == ["A-2", "A-10", "B-3", "B-12"] and report["matches"] == ["B-3", "B-12"] and report["summary"]["total"] == Decimal("5.75")
+        value = service(); report = value.report("DELTA", "supplies"); return report["skus"] == ["C-4", "C-21", "D-5", "D-16"] and report["matches"] == ["D-5", "D-16"] and report["summary"]["total"] == Decimal("10.00")
     return [c1, c2, c3, c4, c5, c6, c7, c8]
 
 
@@ -118,28 +118,28 @@ def _r2(workspace: Path) -> list[Callable[[], Any]]:
         value = old_client("https://example.test"); return isinstance(value, Client) and (value.timeout, value.retries) == (30, 2)
     def c2():
         from clientkit.client import Client
-        return Client("x").request("/a", timeout=7).timeout == 7
+        return Client("service.example").request("/c", timeout=17).timeout == 17
     def c3():
         from clientkit.client import Client
-        return Client("x", retries=3).request("/write", idempotent=False).attempts == 1
+        return Client("service.example", retries=3).request("/write", idempotent=False).attempts == 1
     def c4():
         from clientkit.factory import make_client
         value = make_client("x", timeout=11, retries=4); return (value.timeout, value.retries) == (11, 4)
     def c5():
         from clientkit.client import Client
         from clientkit.legacy import old_client
-        value = Client("x", 9, 1); return value.request("/a").timeout == 9 and old_client("x", 8, 0).timeout == 8
+        value = Client("service.example", 19, 1); return value.request("/c").timeout == 19 and old_client("service.example", 18, 0).timeout == 18
     def c6():
         from clientkit.client import Client
         from clientkit.codec import decode, encode
-        return decode(encode(Client("x", timeout=13, retries=5))) == {"base_url": "x", "timeout": 13, "retries": 5}
+        return decode(encode(Client("service.example", timeout=13, retries=5))) == {"base_url": "service.example", "timeout": 13, "retries": 5}
     def c7():
         from clientkit.client import Client
-        return [r.path for r in Client("x").request_many(["/b", "/a"])] == ["/b", "/a"]
+        return [r.path for r in Client("service.example").request_many(["/d", "/c"])] == ["/d", "/c"]
     def c8():
         from clientkit.report import summarize
         from clientkit.types import Response
-        return summarize([Response("/a", 1, 3), Response("/b", 2, 4)]) == {"paths": ["/a", "/b"], "attempts": 3}
+        return summarize([Response("/c", 1, 3), Response("/d", 2, 4)]) == {"paths": ["/c", "/d"], "attempts": 3}
     return [c1, c2, c3, c4, c5, c6, c7, c8]
 
 
@@ -148,11 +148,11 @@ def _r3(workspace: Path) -> list[Callable[[], Any]]:
         from experiment.pipeline import run
         return run(workspace / "data/measurements.csv", seed=1)
     def c1():
-        rows = result()["rows"]; return len(rows) == 9 and {r.group for r in rows} == {"north", "south", "east"}
+        rows = result()["rows"]; return len(rows) == 9 and {r.group for r in rows} == {"amber", "cobalt", "indigo"}
     def c2():
-        metrics = result()["metrics"]; return abs(metrics["total"] - 49.0) < 1e-9 and abs(metrics["mean"] - 49.0 / 9.0) < 1e-9
+        metrics = result()["metrics"]; return abs(metrics["total"] - 50.0) < 1e-9 and abs(metrics["mean"] - 50.0 / 9.0) < 1e-9
     def c3():
-        rows = result()["rows"]; return all([r.timestamp for r in rows if r.group == group] == sorted(r.timestamp for r in rows if r.group == group) for group in {"north", "south", "east"})
+        rows = result()["rows"]; return all([r.timestamp for r in rows if r.group == group] == sorted(r.timestamp for r in rows if r.group == group) for group in {"amber", "cobalt", "indigo"})
     def c4():
         value = result(); train = {r.group for r in value["train"]}; evaluation = {r.group for r in value["evaluation"]}; return train.isdisjoint(evaluation)
     def c5():
@@ -161,9 +161,9 @@ def _r3(workspace: Path) -> list[Callable[[], Any]]:
         from experiment.pipeline import run
         value = result(); again = run(workspace / "data/measurements.csv", seed=1); return value["train"] == again["train"] and value["evaluation"] == again["evaluation"]
     def c7():
-        rows = result()["rows"]; return rows[0].group == "east" and {r.quality for r in rows} == {"ok"}
+        rows = result()["rows"]; return rows[0].group == "amber" and {r.quality for r in rows} == {"ok"}
     def c8():
-        value = result(); report = value["report"]; return report["schema"] == "experiment-v1" and report["train"] + report["evaluation"] == 9 and set(report["train_groups"]) | set(report["evaluation_groups"]) == {"east", "north", "south"}
+        value = result(); report = value["report"]; return report["schema"] == "experiment-v1" and report["train"] + report["evaluation"] == 9 and set(report["train_groups"]) | set(report["evaluation_groups"]) == {"amber", "cobalt", "indigo"}
     return [c1, c2, c3, c4, c5, c6, c7, c8]
 
 
@@ -182,16 +182,16 @@ def _r4(workspace: Path) -> list[Callable[[], Any]]:
     def c3():
         result = service().load(environ={"APP_ENABLED": "true", "APP_LIMIT": "3"}); return result["enabled"] is True and result["limit"] == 3
     def c4():
-        value = service(); ada = value.sessions.activate("ada"); value.sessions.touch(); lin = value.sessions.activate("lin"); return ada["visits"] == 1 and lin["visits"] == 0
+        value = service(); ada = value.sessions.activate("eve"); value.sessions.touch(); lin = value.sessions.activate("zoe"); return ada["visits"] == 1 and lin["visits"] == 0
     def c5():
-        value = service(); value.sessions.activate("ada"); value.sessions.reset(); return value.sessions.active_user is None
+        value = service(); value.sessions.activate("eve"); value.sessions.reset(); return value.sessions.active_user is None
     def c6():
-        value = service(); value.sessions.activate("ada"); value.sessions.touch(); value.sessions.activate("lin"); encoded = value.save_sessions(); other = service(); other.restore_sessions(encoded); return other.sessions.export() == value.sessions.export()
+        value = service(); value.sessions.activate("eve"); value.sessions.touch(); value.sessions.activate("zoe"); encoded = value.save_sessions(); other = service(); other.restore_sessions(encoded); return other.sessions.export() == value.sessions.export()
     def c7():
-        value = service(); value.sessions.activate("ada"); other = service(); other.restore_sessions(value.save_sessions()); other.sessions.activate("lin"); other.sessions.reset(); return other.sessions.active_user is None and "ada" in other.sessions.export()["users"]
+        value = service(); value.sessions.activate("eve"); other = service(); other.restore_sessions(value.save_sessions()); other.sessions.activate("zoe"); other.sessions.reset(); return other.sessions.active_user is None and "eve" in other.sessions.export()["users"]
     def c8():
         from settings.report import describe
-        value = service(); value.sessions.activate("ada"); result = value.load(environ={"APP_LIMIT": "0"}); return describe(result, value.sessions) == {"settings": result, "active_user": "ada", "users": ["ada"]}
+        value = service(); value.sessions.activate("eve"); result = value.load(environ={"APP_LIMIT": "0"}); return describe(result, value.sessions) == {"settings": result, "active_user": "eve", "users": ["eve"]}
     return [c1, c2, c3, c4, c5, c6, c7, c8]
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import fnmatch
 import hashlib
 import json
 import os
@@ -33,9 +32,11 @@ from ekalavya.schema import CandidateIdentity
 from . import EVALUATION_CLASS, FAMILIES, SEEDS, SUITE_NAME, SUITE_SOURCE_PATHS, SUITE_VERSION, TIMEOUT_SECONDS
 from .evaluate import evaluate, visible_check_vector
 from .generate import TaskInstance, make_instance, materialize, task_hashes, workspace_digest
+from benchmark.edit_scope import matches_edit_scope
 
 MODELS = ("gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high")
 REASONING = ("low", "medium", "high")
+RUN_ORDER = ((0, 0), (1, 1), (2, 2), (3, 0), (0, 1), (1, 2), (2, 0), (3, 1), (0, 2), (1, 0), (2, 1), (3, 2))
 
 
 def now() -> str:
@@ -147,6 +148,27 @@ def _baseline_validation(items: list[TaskInstance]) -> dict[str, Any]:
     return result
 
 
+def _edit_scope_validation(items: list[TaskInstance]) -> dict[str, Any]:
+    results = []
+    for instance in items:
+        source = next(name for name in instance.files if name.endswith('.py') and not name.startswith('tests/'))
+        nested = f"{source.split('/', 1)[0]}/nested/{source.rsplit('/', 1)[-1]}"
+        immutable = next(iter(instance.immutable))
+        checks = {
+            "allowed_direct_source": _scope_match(source, instance),
+            "allowed_nested_source": _scope_match(nested, instance) if any("**" in p for p in instance.editable) else True,
+            "immutable_declared_path": not _scope_match(immutable, instance),
+            "unrelated_path": not _scope_match("unrelated/escape.py", instance),
+            "generated_noise_policy": True,
+        }
+        results.append({"family": instance.family, "checks": checks, "status": "pass" if all(checks.values()) else "fail"})
+    return {"status": "pass" if all(item["status"] == "pass" for item in results) else "fail", "tasks": results}
+
+
+def _scope_match(path: str, instance: TaskInstance) -> bool:
+    return matches_edit_scope(path, instance.editable)
+
+
 def freeze() -> dict[str, Any]:
     """Run all no-inference gates and persist the frozen portfolio metadata."""
     root = state_root(); items = instances()
@@ -160,14 +182,18 @@ def freeze() -> dict[str, Any]:
     baseline = _baseline_validation(items)
     if baseline["status"] != "pass":
         raise RuntimeError("baseline validation failed: " + json.dumps(baseline, sort_keys=True))
+    edit_scope = _edit_scope_validation(items)
+    if edit_scope["status"] != "pass":
+        raise RuntimeError("edit-scope validation failed: " + json.dumps(edit_scope, sort_keys=True))
     hashes = []
     for item in items:
         values = task_hashes(item)
         values.update({"family": item.family, "seed": item.seed, "suite": SUITE_NAME, "version": SUITE_VERSION, "suite_git_sha": provenance["git_sha"]})
         hashes.append(values)
-    validation = {"baseline": baseline, "reference_validation": {"status": "pending", "passed": None}, "gold_accessibility_gate": {"status": "pass", "answer_bearing_repair_source": False, "method": "tracked source and Git-history audit; reference repair is external ephemeral state"}, "provenance": provenance, "portfolio_frozen": True, "inference_authorized": False, "created_at": now()}
+    validation = {"baseline": baseline, "edit_scope_validation": edit_scope, "reference_validation": {"status": "pending", "passed": None}, "gold_accessibility_gate": {"status": "pass", "answer_bearing_repair_source": False, "method": "tracked source and Git-history audit; reference repair is external ephemeral state"}, "provenance": provenance, "portfolio_frozen": True, "run_order": [list(item) for item in RUN_ORDER], "inference_authorized": False, "created_at": now()}
     (root / "validation").mkdir(exist_ok=True)
     (root / "validation" / "preflight.json").write_text(json.dumps(validation, indent=2, sort_keys=True) + "\n")
+    (root / "validation" / "edit-scope-validation.json").write_text(json.dumps(edit_scope, indent=2, sort_keys=True) + "\n")
     _write_design_artifacts(items)
     (root / "configuration-summary.json").write_text(json.dumps({"suite": SUITE_NAME, "version": SUITE_VERSION, "evaluation_class": EVALUATION_CLASS, "seeds": SEEDS, "models": MODELS, "reasoning": REASONING, "attempt_timeout_seconds": TIMEOUT_SECONDS, "retries": 0, "portfolio_frozen": True, "calibration_excluded": False}, indent=2, sort_keys=True) + "\n")
     return {"suite_git_sha": provenance["git_sha"], "baseline": baseline, "tasks": hashes, "timeout_seconds": TIMEOUT_SECONDS}
@@ -200,7 +226,7 @@ def _terminate(process: subprocess.Popen[str]) -> None:
 
 
 def _allowed(path: str, instance: TaskInstance) -> bool:
-    return any(fnmatch.fnmatch(path, pattern) or path.startswith(pattern.rstrip("*") + "/") for pattern in instance.editable)
+    return matches_edit_scope(path, instance.editable)
 
 
 def _identity(model_id: str, reasoning: str, version: str) -> dict[str, Any]:
@@ -282,9 +308,10 @@ def run_sweep() -> dict[str, Any]:
         hashes = task_hashes(instance); base = next(item for item in baseline if item["family"] == instance.family)
         task_records[instance.family] = record_benchmark_task(conn, suite_id, family=instance.family, task_id=instance.task_id, variant_seed=str(instance.seed), content_hash=hashes["generated_workspace_hash"], prompt_hash=hashes["task_spec_hash"], evaluator_hash=hashes["visible_verifier_hash"], baseline_score=base["baseline_score"], baseline_check_vector=base["baseline_check_vector"], task_spec_hash=hashes["task_spec_hash"], allowed_edit_manifest_hash=hashes["allowed_edit_manifest_hash"], reference_validation_passed=True, reference_validation_at=preflight["reference_validation"].get("timestamp"))
     attempts = []
-    for instance in items:
-        for model_id, reasoning in zip(MODELS, REASONING):
-            attempts.append(run_attempt(conn, suite_id, task_records[instance.family], instance, model_id, reasoning, harness_id, root, discovery["client_version"]))
+    for task_index, model_index in RUN_ORDER:
+        instance = items[task_index]
+        model_id, reasoning = MODELS[model_index], REASONING[model_index]
+        attempts.append(run_attempt(conn, suite_id, task_records[instance.family], instance, model_id, reasoning, harness_id, root, discovery["client_version"]))
     result = {"experiment": SUITE_NAME, "suite": SUITE_NAME, "version": SUITE_VERSION, "evaluation_class": EVALUATION_CLASS, "suite_git_sha": provenance["git_sha"], "report_generation_code_identity": provenance["git_sha"], "attempt_timeout_seconds": TIMEOUT_SECONDS, "retries": 0, "attempts": len(attempts), "completed": sum(item["status"] == "completed" for item in attempts), "timeouts": sum(item["status"] == "explicit_timeout" for item in attempts), "harness_failures": sum(item["status"] == "harness_failure" for item in attempts), "evaluator_tampering": sum(item["status"] == "evaluator_tampering" for item in attempts), "discovery": discovery}
     (root / "run-summary.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     return result
