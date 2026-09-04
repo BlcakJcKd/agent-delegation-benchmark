@@ -347,7 +347,7 @@ def _r3(seed: int) -> tuple[dict[str, str], str, tuple[str, ...], tuple[str, ...
         south,2024-01-02T10:00:00,2.50,ok
         north,2024-01-02T09:00:00,3.75,ok
         east,2024-03-01T08:00:00,4.25,ok
-        south,2024-02-11T10:00:00,5.50,ok
+        south,2024-02-11T10:00:00,5.50, OK 
         east,2024-01-15T08:00:00,6.75,ok
         north,2024-03-04T09:00:00,7.25,ok
         south,2024-03-12T10:00:00,8.50,ok
