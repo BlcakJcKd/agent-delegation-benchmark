@@ -31,6 +31,12 @@ inference. `eka models refresh` is explicit and discovery-only;
 it records new identities as candidates and never promotes them or changes a
 profile default.
 
+Lifecycle promotion is a separate explicit action. Inspect exact identities
+with `eka models --json`; a promotion based on measured efficiency must use
+`eka models promote ID --basis operational_efficiency`. Adding
+`--set-default --profile flash --default-reasoning low` also changes that
+user-owned profile default, so it must not be run implicitly.
+
 ## Primary owns routing
 
 The primary decides whether to delegate, how much context to provide, and to

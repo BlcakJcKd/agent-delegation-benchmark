@@ -11,6 +11,7 @@ from .schema import CandidateIdentity
 
 LIVE_STATES = {"candidate", "current", "previous"}
 ALL_STATES = LIVE_STATES | {"retired", "rejected", "removed"}
+PROMOTION_BASES = {"quality_superiority", "operational_efficiency", "manual", "unspecified"}
 
 
 def _private_dir(path: Path) -> None:
@@ -152,8 +153,22 @@ def canonicalize_gemini_flash_generations(
     return result
 
 
-def promote(entries: list[dict[str, Any]], identity_key: str, reason: str = "explicit promotion") -> list[dict[str, Any]]:
-    return transition(entries, identity_key, "current")
+def promote(
+    entries: list[dict[str, Any]],
+    identity_key: str,
+    reason: str = "explicit promotion",
+    *,
+    promotion_basis: str = "unspecified",
+) -> list[dict[str, Any]]:
+    if promotion_basis not in PROMOTION_BASES:
+        raise ValueError(f"invalid promotion basis: {promotion_basis}")
+    result = transition(entries, identity_key, "current")
+    for entry in result:
+        if entry.get("identity_key") == identity_key:
+            entry["promotion_basis"] = promotion_basis
+            entry["promotion_reason"] = reason
+            break
+    return result
 
 
 def reject(entries: list[dict[str, Any]], identity_key: str, reason: str = "explicit rejection") -> list[dict[str, Any]]:

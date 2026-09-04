@@ -78,6 +78,21 @@ class EkalavyaCliTests(unittest.TestCase):
                 json.loads(output.getvalue())
             tui.assert_not_called()
 
+    def test_model_promotion_requires_and_records_explicit_basis(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self._files(root)
+            with self._xdg(root):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(main(["models", "promote", "haiku-key", "--basis", "operational_efficiency", "--promotion-reason", "measured efficiency", "--set-default", "--profile", "haiku", "--default-reasoning", "low", "--json"]), 0)
+                payload = json.loads(output.getvalue())
+                self.assertEqual(payload["promotion_basis"], "operational_efficiency")
+                catalogue = json.loads((root / "config" / "ekalavya" / "catalogue.json").read_text())
+                profile = json.loads((root / "config" / "ekalavya" / "profiles.json").read_text())[0]
+                self.assertEqual(catalogue[0]["promotion_basis"], "operational_efficiency")
+                self.assertEqual(profile["default_identity_key"], "haiku-key")
+                self.assertEqual(profile["default_reasoning"], "low")
+
     def test_unknown_targets_are_rejected_without_persisting_new_keys(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); self._files(root)

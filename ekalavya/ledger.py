@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS request_metrics(id INTEGER PRIMARY KEY, run_id TEXT N
 CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), request_id INTEGER REFERENCES request_metrics(id), ordinal INTEGER, tool_name TEXT, validity TEXT, error TEXT, recovered INTEGER, alternate_tool INTEGER, metadata_json TEXT);
 CREATE TABLE IF NOT EXISTS pricing_snapshots(id INTEGER PRIMARY KEY, provider TEXT NOT NULL, effective_at TEXT NOT NULL, currency TEXT, prices_json TEXT NOT NULL, source TEXT, UNIQUE(provider,effective_at,prices_json));
 CREATE TABLE IF NOT EXISTS cost_observations(id INTEGER PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), billing_mode TEXT, provider_reported_cost REAL, calculated_cost REAL, api_equivalent_cost REAL, currency TEXT, cost_source TEXT, price_snapshot_id INTEGER REFERENCES pricing_snapshots(id), input_tokens INTEGER, output_tokens INTEGER, cached_input_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER);
-CREATE TABLE IF NOT EXISTS promotion_events(id INTEGER PRIMARY KEY, identity_key TEXT, from_state TEXT, to_state TEXT, occurred_at TEXT, reason TEXT);
+CREATE TABLE IF NOT EXISTS promotion_events(id INTEGER PRIMARY KEY, identity_key TEXT, from_state TEXT, to_state TEXT, occurred_at TEXT, reason TEXT, promotion_basis TEXT);
 CREATE TABLE IF NOT EXISTS retirement_events(id INTEGER PRIMARY KEY, identity_key TEXT, occurred_at TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS default_changes(id INTEGER PRIMARY KEY, profile TEXT, old_identity_key TEXT, new_identity_key TEXT, occurred_at TEXT, reason TEXT);
 CREATE TABLE IF NOT EXISTS resolution_decisions(id INTEGER PRIMARY KEY, run_id TEXT REFERENCES runs(run_id), requested_json TEXT NOT NULL, resolved_json TEXT, state TEXT NOT NULL, reason TEXT, alternatives_json TEXT);
@@ -70,6 +70,7 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "harnesses", "observed_at", "TEXT")
     _ensure_column(conn, "benchmark_suites", "evaluation_class", "TEXT NOT NULL DEFAULT 'unknown'")
     _ensure_column(conn, "runs", "evaluation_class", "TEXT NOT NULL DEFAULT 'unknown'")
+    _ensure_column(conn, "promotion_events", "promotion_basis", "TEXT")
     for column, definition in (
         ("baseline_score", "REAL"),
         ("baseline_check_vector_json", "TEXT"),
@@ -153,6 +154,27 @@ def upsert_model(conn: sqlite3.Connection, identity: CandidateIdentity, *, lifec
 def record_availability(conn: sqlite3.Connection, model_id: int, *, state: str, observed_at: str | None = None, source: str | None = None, details: dict[str, Any] | None = None) -> None:
     conn.execute("INSERT INTO model_availability(model_id,state,observed_at,source,details_json) VALUES(?,?,?,?,?)", (model_id, state, observed_at or datetime.now(timezone.utc).isoformat(), source, json.dumps(details or {}, sort_keys=True)))
     conn.commit()
+
+
+def record_promotion_event(
+    conn: sqlite3.Connection,
+    identity_key: str,
+    *,
+    from_state: str | None,
+    to_state: str,
+    reason: str,
+    promotion_basis: str,
+    occurred_at: str | None = None,
+) -> int:
+    """Record an explicit lifecycle promotion with its evidentiary basis."""
+    if promotion_basis not in {"quality_superiority", "operational_efficiency", "manual", "unspecified"}:
+        raise ValueError(f"invalid promotion basis: {promotion_basis}")
+    cursor = conn.execute(
+        "INSERT INTO promotion_events(identity_key,from_state,to_state,occurred_at,reason,promotion_basis) VALUES(?,?,?,?,?,?)",
+        (identity_key, from_state, to_state, occurred_at or datetime.now(timezone.utc).isoformat(), reason, promotion_basis),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
 
 
 def record_harness(conn: sqlite3.Connection, name: str, *, version: str | None = None, adapter_version: str | None = None, transport: str | None = None, capabilities: dict[str, Any] | None = None, telemetry: dict[str, Any] | None = None, eligibility: dict[str, str] | None = None, evidence_label: str | None = None, observed_at: str | None = None) -> int:

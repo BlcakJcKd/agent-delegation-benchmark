@@ -55,14 +55,14 @@ class HarnessRecord:
 
 def audited_registry() -> tuple[HarnessRecord, ...]:
     common_agy = {key: "supported" for key in CAPABILITIES}
-    common_agy.update({"filesystem_containment": "unsupported", "tool_network_containment": "unsupported", "cost_usage": "unavailable"})
+    common_agy.update({"filesystem_containment": "unsupported", "tool_network_containment": "unsupported", "tool_trace": "unavailable", "cost_usage": "unavailable"})
     return (
         HarnessRecord(
-            "agy", "1.1.25", "agy", "agy",
+            "agy", "1.1.26", "agy", "agy",
             {"ordinary": "supported", "public_characterization": "supported", "hidden_benchmark": "unsupported"},
             common_agy,
-            "no independent candidate-tool subprocess boundary; native sandbox permits parent and network escape",
-            "synthetic AGY isolation probe",
+            "AGY 1.1.26 exposes no supported independent candidate-tool subprocess boundary; native sandbox does not establish parent/network containment",
+            "AGY 1.1.26 help and changelog audit; prior isolation probe",
             "Gemini Flash exact runtime IDs and reasoning variants",
             "harness_session", "unavailable", "harness_reported_usage",
         ),
