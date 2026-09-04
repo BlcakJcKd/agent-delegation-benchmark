@@ -138,10 +138,14 @@ class ComputeStatusTests(unittest.TestCase):
     def test_provider_disable_overrides_individual_model_enabled_preference(self):
         config = set_enabled(default_config(), "providers", "codex", False, reason="weekly quota low")
         results = {r.route: r for r in compute_status(config, primary=None, which=self._which_all_present)}
-        self.assertTrue(results["terra"].configured_enabled is False)
-        self.assertTrue(results["luna"].configured_enabled is False)
+        self.assertTrue(results["terra"].configured_enabled)
+        self.assertTrue(results["terra"].provider_enabled is False)
+        self.assertTrue(results["terra"].effective_enabled is False)
+        self.assertEqual(results["terra"].provider_reason, "weekly quota low")
         self.assertEqual(results["terra"].effective, "disabled")
         self.assertEqual(results["terra"].effective_reason, "weekly quota low")
+        self.assertTrue(results["luna"].configured_enabled)
+        self.assertFalse(results["luna"].effective_enabled)
 
     def test_re_enabling_provider_restores_untouched_model_preferences(self):
         config = set_enabled(default_config(), "providers", "codex", False, reason="quota low")

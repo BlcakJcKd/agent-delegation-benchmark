@@ -6,9 +6,8 @@ Split deliberately in two layers:
   ``rows_to_config``, ``diff_summary``) operate on plain data and contain all
   the actual logic. These are unit-tested directly, without a TTY.
 - The curses event loop (``run_interactive_config``, ``_loop``, ``_render``)
-  drives those functions but is not itself unit-tested -- driving a real
-  curses screen in a test is impractical and unnecessary; the logic it
-  depends on is what matters and is covered.
+  drives those functions.  Its save/cancel boundary is unit-tested with a
+  fake wrapper; terminal rendering remains deliberately thin.
 
 Toggling a provider row never cascades to its models' own enabled
 preference: a disabled provider overrides *effective* availability (computed
@@ -32,20 +31,27 @@ PROVIDER_LABELS: dict[str, str] = {
 }
 MODEL_LABELS: dict[str, str] = {
     "flash": "Flash", "sonnet": "Sonnet", "haiku": "Haiku", "terra": "Terra", "luna": "Luna",
-    "deepseek-pro": "V4 Pro", "deepseek-flash": "V4 Flash", "minimax-m3": "M3",
+    "deepseek-pro": "DeepSeek V4 Pro", "deepseek-flash": "DeepSeek V4 Flash",
+    "minimax-m3": "MiniMax M3",
 }
 
 
 @dataclass(frozen=True)
 class Row:
-    kind: str  # "provider" | "model"
-    section: str  # "providers" | "models"
+    kind: str  # "provider" | "model" | "vllm"
+    section: str  # "providers" | "models" | "vllm"
     name: str
     label: str
     enabled: bool
     reason: str | None
     provider: str | None  # owning provider name for a model row; None for a provider row
     details: tuple[str, ...] = ()
+    effective_enabled: bool | None = None
+    effective_reason: str | None = None
+
+    @property
+    def configured_enabled(self) -> bool:
+        return self.enabled
 
 
 def build_rows(
@@ -58,13 +64,25 @@ def build_rows(
         rows.append(Row(
             "provider", "providers", provider, PROVIDER_LABELS[provider],
             entry["enabled"], entry.get("reason"), None,
+            effective_enabled=bool(entry.get("enabled", True)),
+            effective_reason=entry.get("reason") if not entry.get("enabled", True) else None,
         ))
-        for model in sorted(m for m in routing.MODELS if routing.ROUTE_PROVIDER[m] == provider):
-            m_entry = config["models"][model]
-            rows.append(Row(
-                "model", "models", model, MODEL_LABELS[model],
-                m_entry["enabled"], m_entry.get("reason"), provider,
-            ))
+    for model in sorted(routing.MODELS, key=lambda name: (routing.ROUTE_PROVIDER[name], name)):
+        provider = routing.ROUTE_PROVIDER[model]
+        provider_entry = config["providers"][provider]
+        m_entry = config["models"][model]
+        provider_enabled = bool(provider_entry.get("enabled", True))
+        model_enabled = bool(m_entry.get("enabled", True))
+        effective_reason = None
+        if not provider_enabled:
+            effective_reason = provider_entry.get("reason")
+        elif not model_enabled:
+            effective_reason = m_entry.get("reason")
+        rows.append(Row(
+            "model", "models", model, MODEL_LABELS[model],
+            model_enabled, m_entry.get("reason"), provider, (),
+            provider_enabled and model_enabled, effective_reason,
+        ))
     # Keep this pure by default; the interactive entry point supplies the
     # machine-local inspection explicitly.  This also keeps library callers
     # and tests independent of whichever vllm.toml happens to exist.
@@ -85,13 +103,19 @@ def build_rows(
                 f"output cap: {provider.max_tokens_cap} tokens",
                 "credential: configured reference",
             )
+            effective_enabled = bool(entry.get("enabled", True))
+            effective_reason = entry.get("reason") if not effective_enabled else None
         elif info:
             details = (f"state: {info.error_kind or 'invalid configuration'}",)
+            effective_enabled = False
+            effective_reason = info.error
         else:
             details = ("state: local vLLM route definition missing",)
+            effective_enabled = False
+            effective_reason = "local vLLM route definition missing"
         rows.append(Row(
             "vllm", "vllm", name, name, entry.get("enabled", True),
-            entry.get("reason"), None, details,
+            entry.get("reason"), None, details, effective_enabled, effective_reason,
         ))
     return rows
 
@@ -143,41 +167,37 @@ def _render(stdscr, rows: list[Row], cursor: int) -> None:
 
     stdscr.erase()
     height, width = stdscr.getmaxyx()
-    stdscr.addstr(0, 0, "Agent Delegation Configuration"[: max(1, width - 1)], curses.A_BOLD)
-    y = 2
-    available = max(1, height - 6)
-    start = 0
-    while start < cursor and sum(_row_height(row) for row in rows[start:cursor]) >= available:
-        start += 1
-    for i in range(start, len(rows)):
-        row = rows[i]
-        if y >= height - 6:
-            break
-        indent = "    " if row.kind == "model" else ""
-        box = "[x]" if row.enabled else "[ ]"
-        reason = f"   {row.reason}" if (row.reason and row.kind in {"provider", "vllm"}) else ""
-        name = row.name if row.kind == "provider" else row.provider
-        if row.kind == "vllm":
-            name = row.label
-        # PAYG providers/routes are visually tagged so they're never
-        # mistaken for the existing subscription/quota-based ones.
-        badge = "   PAYG · experimental" if routing.PROVIDER_BILLING.get(name) == "payg" else ""
-        line = f"{indent}{box} {row.label}{badge}{reason}"
-        attr = curses.A_REVERSE if i == cursor else curses.A_NORMAL
+    stdscr.addstr(0, 0, "Ekalavya Availability"[: max(1, width - 1)], curses.A_BOLD)
+    screen_lines: list[tuple[str, int, int | None]] = []
+    section_titles = (("providers", "Providers"), ("models", "Models"), ("vllm", "Routes / vLLM"))
+    for section, title in section_titles:
+        section_rows = [(i, row) for i, row in enumerate(rows) if row.section == section]
+        if not section_rows:
+            continue
+        screen_lines.append((title, curses.A_BOLD, None))
+        for i, row in section_rows:
+            indent = "    " if row.kind == "model" else ""
+            box = "[x]" if row.enabled else "[ ]"
+            badge = "   PAYG · experimental" if routing.PROVIDER_BILLING.get(row.provider or row.name) == "payg" else ""
+            line = f"{indent}{box} {row.label}{badge}"
+            attr = curses.A_REVERSE if i == cursor else curses.A_NORMAL
+            screen_lines.append((line, attr, i))
+            configured = "enabled" if row.enabled else "disabled"
+            effective = "enabled" if row.effective_enabled is not False else "disabled"
+            status = f"configured: {configured} · effective: {effective}"
+            if row.effective_reason:
+                status += f" ({row.effective_reason})"
+            screen_lines.append((status, curses.A_DIM, None))
+            for detail in row.details:
+                screen_lines.append((detail, curses.A_DIM, None))
+    cursor_line = next((line for line, (_, _, row_index) in enumerate(screen_lines) if row_index == cursor), 0)
+    visible_height = max(1, height - 6)
+    start = max(0, min(cursor_line, max(0, len(screen_lines) - visible_height)))
+    for y, (text, attr, _) in enumerate(screen_lines[start:start + visible_height], start=2):
         try:
-            stdscr.addstr(y, 0, line[: max(1, width - 1)], attr)
+            stdscr.addstr(y, 0, text[: max(1, width - 1)], attr)
         except Exception:
             pass
-        y += 1
-        if row.details:
-            for detail in row.details:
-                if y >= height - 6:
-                    break
-                try:
-                    stdscr.addstr(y, 4, detail[: max(1, width - 5)], curses.A_DIM)
-                except Exception:
-                    pass
-                y += 1
     footer_y = max(0, height - 3)
     footer = "↑/↓ navigate  Space toggle  r reason  Enter/s save  q cancel"
     try:

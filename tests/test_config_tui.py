@@ -9,9 +9,10 @@ independence) lives in these pure functions and is covered without a TTY.
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from delegation.config import default_config, set_enabled
-from delegation.config_tui import build_rows, diff_summary, rows_to_config, set_reason, toggle
+from delegation.config_tui import build_rows, diff_summary, rows_to_config, run_interactive_config, set_reason, toggle
 
 
 class BuildRowsTests(unittest.TestCase):
@@ -44,6 +45,25 @@ class BuildRowsTests(unittest.TestCase):
         codex_row = next(r for r in rows if r.kind == "provider" and r.name == "codex")
         self.assertFalse(codex_row.enabled)
         self.assertEqual(codex_row.reason, "quota low")
+
+    def test_sections_are_separate_and_provider_disable_does_not_disable_model_preference(self):
+        config = set_enabled(default_config(), "providers", "deepseek", False, reason="peak hours")
+        config = set_enabled(config, "models", "deepseek-flash", True)
+        rows = build_rows(config)
+        self.assertEqual([row.section for row in rows[:5]], ["providers"] * 5)
+        self.assertTrue(all(row.section == "models" for row in rows[5:13]))
+        model = next(row for row in rows if row.name == "deepseek-flash")
+        self.assertTrue(model.configured_enabled)
+        self.assertFalse(model.effective_enabled)
+        self.assertEqual(model.effective_reason, "peak hours")
+
+    def test_vllm_route_has_configured_and_effective_state(self):
+        config = default_config({"qwen35-9b-craig"})
+        rows = build_rows(config, {})
+        route = next(row for row in rows if row.kind == "vllm")
+        self.assertTrue(route.configured_enabled)
+        self.assertFalse(route.effective_enabled)
+        self.assertIn("missing", route.effective_reason)
 
     def test_payg_providers_and_routes_start_disabled_with_a_reason(self):
         rows = build_rows(default_config())
@@ -147,6 +167,30 @@ class DiffSummaryTests(unittest.TestCase):
         rows = set_reason(rows, index, "quota low")
         summary = diff_summary(original, rows)
         self.assertTrue(any("quota low" in line for line in summary))
+
+
+class InteractiveBoundaryTests(unittest.TestCase):
+    def test_cancel_does_not_save(self):
+        config = default_config()
+        with patch("delegation.config_tui.load_config", return_value=config), \
+             patch("delegation.config_tui.inspect_vllm_routes", return_value={}), \
+             patch("curses.wrapper", return_value=None), \
+             patch("delegation.config_tui.save_config") as save:
+            self.assertEqual(run_interactive_config(), 0)
+        save.assert_not_called()
+
+    def test_save_writes_only_after_wrapper_returns_staged_changes(self):
+        config = default_config()
+        rows = build_rows(config)
+        index = next(i for i, row in enumerate(rows) if row.name == "flash")
+        staged = toggle(rows, index)
+        with patch("delegation.config_tui.load_config", return_value=config), \
+             patch("delegation.config_tui.inspect_vllm_routes", return_value={}), \
+             patch("curses.wrapper", return_value=staged), \
+             patch("delegation.config_tui.save_config") as save:
+            self.assertEqual(run_interactive_config(), 0)
+        save.assert_called_once()
+        self.assertFalse(save.call_args.args[0]["models"]["flash"]["enabled"])
 
 
 if __name__ == "__main__":

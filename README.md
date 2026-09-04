@@ -50,7 +50,10 @@ eka status --primary codex
 eka profiles
 eka models
 eka run <profile> --workspace DIR --prompt-file FILE --primary codex
-eka config
+eka config                 # interactive checkbox editor in a TTY
+eka config --json          # deterministic inspection for scripts
+eka config enable-model <model>
+eka config disable-model <model> --reason "paused"
 ```
 
 `eka` is the supported shorthand installed alongside `ekalavya`. An unrelated

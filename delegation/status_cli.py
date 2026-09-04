@@ -111,18 +111,19 @@ def _print_human(report: dict[str, Any]) -> None:
     print()
     header = (
         f"{'Route':<15} {'Provider':<9} {'Transport':<10} {'Billing':<8} {'Maturity':<13} "
-        f"{'Config':<10} {'Route type':<14} {'Effective':<25} {'Model':<24} "
+        f"{'Model cfg':<10} {'Provider cfg':<12} {'Route type':<14} {'Effective':<25} {'Model':<24} "
         f"{'Shared':<8} {'Conc.':<6} {'Think':<6} {'Default':<8} {'Cap':<6} Reason"
     )
     print(header)
     print("-" * len(header))
     for route in report["routes"]:
         config_state = "enabled" if route["configured_enabled"] else "disabled"
+        provider_state = "enabled" if route.get("provider_enabled", True) else "disabled"
         reason = route["effective_reason"] or route["configured_reason"] or ""
         print(
             f"{route['route']:<15} {route['provider']:<9} {route['transport']:<10} "
             f"{route['billing']:<8} {route['maturity']:<13} {config_state:<10} "
-            f"{route['route_type']:<14} {route['effective']:<25} "
+            f"{provider_state:<12} {route['route_type']:<14} {route['effective']:<25} "
             f"{(route.get('model') or ''):<24} "
             f"{('yes' if route.get('shared_compute') else 'no' if route.get('shared_compute') is not None else ''):<8} "
             f"{(route.get('max_concurrency') or '')!s:<6} "

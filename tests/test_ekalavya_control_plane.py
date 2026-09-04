@@ -33,6 +33,19 @@ class EkalavyaControlPlaneTests(unittest.TestCase):
         self.assertEqual(unavailable.state, "unavailable")
         self.assertEqual(native.reason, "primary provider gemini must use its native agent capability")
 
+    def test_resolver_blocks_a_model_when_its_provider_is_disabled(self):
+        candidate = CandidateIdentity("deepseek", "deepseek-flash", "deepseek-v4-flash")
+        entry = dict(candidate.as_dict(), identity_key=candidate.identity_key, lifecycle="current", legacy_route="deepseek-flash")
+        profile = {"default_identity_key": candidate.identity_key, "permitted_candidates": [candidate.identity_key]}
+        availability = {
+            "providers": {"deepseek": {"enabled": False, "reason": "peak hours"}},
+            "models": {"deepseek-flash": {"enabled": True}},
+        }
+        result = resolve(RunIntent("deepseek-flash"), profile, [entry], availability=availability)
+        self.assertEqual(result.state, "unavailable")
+        self.assertEqual(result.reason, "peak hours")
+        self.assertIsNone(result.candidate)
+
     def test_reasoning_is_rejected_before_resolution(self):
         c = CandidateIdentity("local", "qwen", "qwen", capabilities={"reasoning_values": [False, True]})
         entry = dict(c.as_dict(), identity_key=c.identity_key, lifecycle="current")

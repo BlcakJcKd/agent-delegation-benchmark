@@ -42,10 +42,13 @@ for configured shared routes; it is not an inference request.
 Inspect or explicitly change user-owned availability policy with:
 
 ```bash
-eka config
+eka config                 # interactive checkbox editor in a TTY
+eka config --json          # deterministic inspection for scripts
 eka config list --json
 eka config enable-provider <provider>
 eka config disable-provider <provider> --reason "maintenance"
+eka config enable-model <model>
+eka config disable-model <model> --reason "paused"
 eka config enable <route>
 eka config disable <route> --reason "paused"
 ```

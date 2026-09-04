@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,6 +43,42 @@ class EkalavyaCliTests(unittest.TestCase):
                     self.assertEqual(main(["config", "disable-provider", "claude", "--reason", "maintenance", "--json"]), 0)
                 payload = json.loads(output.getvalue())
                 self.assertFalse(payload["availability"]["providers"]["claude"]["enabled"])
+
+    def test_config_no_action_uses_tui_only_for_a_tty(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self._files(root)
+            with self._xdg(root), patch("ekalavya.cli.sys.stdin.isatty", return_value=True), \
+                 patch("ekalavya.cli.sys.stdout.isatty", return_value=True), \
+                 patch("delegation.config_tui.run_interactive_config", return_value=0) as tui:
+                self.assertEqual(main(["config"]), 0)
+            tui.assert_called_once_with()
+
+    def test_config_json_bypasses_tui_and_is_machine_readable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self._files(root)
+            with self._xdg(root), patch("ekalavya.cli.sys.stdin.isatty", return_value=True), \
+                 patch("ekalavya.cli.sys.stdout.isatty", return_value=True), \
+                 patch("delegation.config_tui.run_interactive_config") as tui:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(main(["config", "--json"]), 0)
+                json.loads(output.getvalue())
+            tui.assert_not_called()
+
+    def test_unknown_targets_are_rejected_without_persisting_new_keys(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self._files(root)
+            with self._xdg(root):
+                for argv, text in (
+                    (["config", "disable-provider", "minimx"], "unknown provider"),
+                    (["config", "disable-model", "deepseek-v4-flash"], "unknown model"),
+                    (["config", "disable", "route-that-does-not-exist"], "unknown model or vLLM route"),
+                ):
+                    error = io.StringIO()
+                    with redirect_stderr(error):
+                        self.assertEqual(main(argv), 2)
+                    self.assertIn(text, error.getvalue())
+                self.assertFalse((root / "config" / "ekalavya" / "config.toml").exists())
 
     def test_public_package_scripts_are_exactly_ekalavya_and_eka(self):
         import tomllib

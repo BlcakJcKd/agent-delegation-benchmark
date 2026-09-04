@@ -23,9 +23,11 @@ eka models
 eka history
 ```
 
-Use `eka doctor` for a health check and `eka config` to inspect persistent
-configuration. These commands are safe to run from any working directory and
-do not perform inference. `eka models refresh` is explicit and discovery-only;
+Use `eka doctor` for a health check and `eka config --json` to inspect
+persistent configuration from an agent or script. For a human in a TTY,
+`eka config` opens the interactive checkbox editor with Save/Cancel. These
+commands are safe to run from any working directory and do not perform
+inference. `eka models refresh` is explicit and discovery-only;
 it records new identities as candidates and never promotes them or changes a
 profile default.
 
@@ -103,6 +105,14 @@ Persistent Ekalavya configuration is user-owned. Agents may read and respect
 it, and may use an explicitly requested one-shot override. Do not permanently
 change profiles, catalogue lifecycle, provider settings, defaults, or resource
 policy unless the user explicitly instructs that change.
+
+Explicit configuration mutations use deterministic commands such as
+`eka config disable-provider <provider> --reason "..."`,
+`eka config enable-provider <provider>`, `eka config disable-model <model>`,
+and `eka config enable-model <model>`. Provider availability and model
+configuration are separate: a configured-enabled model is effectively
+unavailable while its provider is disabled. Unknown names fail validation;
+they are never created implicitly.
 
 ## Ledger and evidence
 

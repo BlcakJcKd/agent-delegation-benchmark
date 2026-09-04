@@ -47,7 +47,7 @@ def _named_route_profile(name: str) -> tuple[dict[str, Any], dict[str, Any]] | N
     route = name[5:]
     info = inspect_vllm_routes().get(route)
     config = load_config()
-    if info is None or info.provider is None or not config.get("vllm", {}).get(route, {"enabled": True}).get("enabled", True):
+    if info is None or info.provider is None:
         return None
     provider = info.provider
     identity = CandidateIdentity(
@@ -96,7 +96,32 @@ def _vllm_summary() -> dict[str, dict[str, Any]]:
 
 
 def _availability_payload(config: dict[str, Any]) -> dict[str, Any]:
-    return {"availability": config, "vllm_routes": _vllm_summary()}
+    effective_models = {}
+    for model in routing.MODELS:
+        provider = routing.ROUTE_PROVIDER[model]
+        provider_entry = config["providers"][provider]
+        model_entry = config["models"][model]
+        provider_enabled = bool(provider_entry.get("enabled", True))
+        configured_enabled = bool(model_entry.get("enabled", True))
+        reason = None
+        if not provider_enabled:
+            reason = provider_entry.get("reason") or "disabled by provider"
+        elif not configured_enabled:
+            reason = model_entry.get("reason") or "disabled by model"
+        effective_models[model] = {
+            "configured_enabled": configured_enabled,
+            "configured_reason": model_entry.get("reason"),
+            "provider": provider,
+            "provider_enabled": provider_enabled,
+            "provider_reason": provider_entry.get("reason"),
+            "effective_enabled": provider_enabled and configured_enabled,
+            "unavailable_reason": reason,
+        }
+    return {
+        "availability": config,
+        "effective_models": effective_models,
+        "vllm_routes": _vllm_summary(),
+    }
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -145,21 +170,36 @@ def cmd_models(args: argparse.Namespace) -> int:
 def cmd_config(args: argparse.Namespace) -> int:
     if getattr(args, "action", None) == "migrate":
         result = migrate_all(); _json_or_text(result, args.json); return 0
-    config = load_config(); action = getattr(args, "action", None)
+    try:
+        config = load_config()
+    except ValueError as exc:
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
+    action = getattr(args, "action", None)
     if action in (None, "list"):
+        if action is None and not getattr(args, "json", False) and sys.stdin.isatty() and sys.stdout.isatty():
+            from delegation.config_tui import run_interactive_config
+            return run_interactive_config()
         root, _, _ = _paths(); _json_or_text({"config_root": str(root), "migration": "explicit via eka config migrate", **_availability_payload(config)}, args.json); return 0
     target = getattr(args, "target", None)
     if not target:
         print(f"config {action} requires a target", file=sys.stderr); return 2
-    if action in {"enable", "disable"}:
-        if target in config.get("models", {}): section = "models"
+    if action in {"enable-model", "disable-model"}:
+        if target not in routing.MODELS:
+            print(f"unknown model: {target}; known: {', '.join(routing.MODELS)}", file=sys.stderr); return 2
+        section = "models"
+        enabled = action == "enable-model"
+        updated = set_enabled(config, section, target, enabled, reason=getattr(args, "reason", None))
+    elif action in {"enable", "disable"}:
+        if target in routing.MODELS: section = "models"
         elif target in config.get("vllm", {}): section = "vllm"
         else:
-            print(f"unknown configured route: {target}", file=sys.stderr); return 2
+            known = ", ".join(sorted(set(routing.MODELS) | set(config.get("vllm", {}))))
+            print(f"unknown model or vLLM route: {target}; known: {known}", file=sys.stderr); return 2
         updated = set_enabled(config, section, target, action == "enable", reason=getattr(args, "reason", None))
     elif action in {"enable-provider", "disable-provider"}:
-        if target not in config.get("providers", {}):
-            print(f"unknown provider: {target}", file=sys.stderr); return 2
+        if target not in routing.PROVIDERS:
+            print(f"unknown provider: {target}; known: {', '.join(routing.PROVIDERS)}", file=sys.stderr); return 2
         updated = set_enabled(config, "providers", target, action == "enable-provider", reason=getattr(args, "reason", None))
         section = "providers"
     else:
@@ -203,7 +243,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.profile not in profiles:
         print(f"profile unavailable: {args.profile}; no automatic provider failover", file=sys.stderr); return 2
     intent = RunIntent(args.profile, args.provider, args.family, args.model, args.reasoning, args.harness, str(args.workspace) if args.workspace else None, str(args.prompt_file) if args.prompt_file else None, args.primary, args.timeout)
-    resolution = resolve(intent, profiles[args.profile], catalogue); record = resolution.as_dict(); run_id = uuid.uuid4().hex
+    resolution = resolve(intent, profiles[args.profile], catalogue, availability=load_config()); record = resolution.as_dict(); run_id = uuid.uuid4().hex
     conn = connect(); record_run(conn, run_id, intent.__dict__, resolved=record.get("resolved"), status=resolution.state, resolution_reason=resolution.reason, provider=(resolution.candidate.provider if resolution.candidate else None), identity_key=(resolution.candidate.identity_key if resolution.candidate else None)); record_resolution(conn, run_id, intent.__dict__, record)
     if args.prompt_file and resolution.state != "resolved": _json_or_text({"run_id": run_id, **record}, args.json); return 3
     if args.prompt_file:
@@ -245,7 +285,7 @@ def _parser() -> argparse.ArgumentParser:
     q=sub.add_parser("status", help="network-free catalogue/profile overview"); q.add_argument("--primary"); q.add_argument("--live", action="store_true", help="perform explicit GET-only shared-route observability checks"); common(q); q.set_defaults(func=cmd_status)
     q=sub.add_parser("profiles", help="list stable capability profiles, not raw model IDs"); common(q); q.set_defaults(func=cmd_profiles)
     q=sub.add_parser("models", help="list catalogue identities; never promotes or downloads"); q.add_argument("refresh", nargs="?", choices=["refresh"], default=None); q.add_argument("--source", type=Path); common(q); q.set_defaults(func=cmd_models)
-    q=sub.add_parser("config", help="inspect or explicitly mutate user-owned availability configuration"); q.add_argument("action", nargs="?", choices=["list", "migrate", "enable", "disable", "enable-provider", "disable-provider"]); q.add_argument("target", nargs="?"); q.add_argument("--reason"); common(q); q.set_defaults(func=cmd_config)
+    q=sub.add_parser("config", help="inspect or explicitly mutate user-owned availability configuration"); q.add_argument("action", nargs="?", choices=["list", "migrate", "enable", "disable", "enable-provider", "disable-provider", "enable-model", "disable-model"]); q.add_argument("target", nargs="?"); q.add_argument("--reason"); common(q); q.set_defaults(func=cmd_config)
     q=sub.add_parser("history"); q.add_argument("--profile"); q.add_argument("--provider"); q.add_argument("--model"); q.add_argument("--limit", type=int, default=20); common(q); q.set_defaults(func=cmd_history)
     q=sub.add_parser("spend"); common(q); q.set_defaults(func=cmd_spend)
     q=sub.add_parser("doctor"); common(q); q.set_defaults(func=cmd_doctor)

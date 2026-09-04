@@ -27,6 +27,9 @@ class RouteStatus:
     maturity: str  # "stable" | "experimental" -- display only, never a routing input
     configured_enabled: bool
     configured_reason: str | None
+    provider_enabled: bool | None
+    provider_reason: str | None
+    effective_enabled: bool
     route_type: str  # "external" | "same-provider" | "native-only"
     effective: str  # also "invalid configuration" | "missing credential reference"
     effective_reason: str | None
@@ -55,6 +58,9 @@ class RouteStatus:
             "maturity": self.maturity,
             "configured_enabled": self.configured_enabled,
             "configured_reason": self.configured_reason,
+            "provider_enabled": self.provider_enabled,
+            "provider_reason": self.provider_reason,
+            "effective_enabled": self.effective_enabled,
             "route_type": self.route_type,
             "effective": self.effective,
             "effective_reason": self.effective_reason,
@@ -73,15 +79,19 @@ class RouteStatus:
         }
 
 
-def _configured(config: dict, route: str) -> tuple[bool, str | None]:
+def _configured(config: dict, route: str) -> tuple[bool, str | None, bool, str | None, bool, str | None]:
     provider = routing.ROUTE_PROVIDER[route]
     provider_entry = config["providers"].get(provider, {"enabled": True})
     model_entry = config["models"].get(route, {"enabled": True})
-    if not provider_entry.get("enabled", True):
-        return False, provider_entry.get("reason")
-    if not model_entry.get("enabled", True):
-        return False, model_entry.get("reason")
-    return True, model_entry.get("reason") or provider_entry.get("reason")
+    model_enabled = bool(model_entry.get("enabled", True))
+    model_reason = model_entry.get("reason")
+    provider_enabled = bool(provider_entry.get("enabled", True))
+    provider_reason = provider_entry.get("reason")
+    if not provider_enabled:
+        return model_enabled, model_reason, provider_enabled, provider_reason, False, provider_reason
+    if not model_enabled:
+        return model_enabled, model_reason, provider_enabled, provider_reason, False, model_reason
+    return model_enabled, model_reason, provider_enabled, provider_reason, True, None
 
 
 def compute_status(
@@ -99,13 +109,13 @@ def compute_status(
     results: list[RouteStatus] = []
     for route in sorted(routing.MODELS, key=lambda r: (routing.ROUTE_PROVIDER[r], r)):
         provider = routing.ROUTE_PROVIDER[route]
-        enabled, reason = _configured(config, route)
+        enabled, reason, provider_enabled, provider_reason, effective_enabled, unavailable_reason = _configured(config, route)
         rtype = routing.route_type(route, normalized_primary)
         executable = routing.ROUTE_EXECUTABLE[route]
         executable_available = bool(which(executable)) if executable else None
 
-        if not enabled:
-            effective, effective_reason = "disabled", reason
+        if not effective_enabled:
+            effective, effective_reason = "disabled", unavailable_reason
         elif rtype == "native-only":
             effective, effective_reason = "native-only", "no external wrapper for this route"
         elif rtype == "same-provider":
@@ -121,7 +131,9 @@ def compute_status(
         results.append(RouteStatus(
             route=route, provider=provider, transport=routing.ROUTE_TRANSPORT[route],
             billing=routing.ROUTE_BILLING[route], maturity=routing.ROUTE_MATURITY[route],
-            configured_enabled=enabled, configured_reason=reason, route_type=rtype,
+            configured_enabled=enabled, configured_reason=reason,
+            provider_enabled=provider_enabled, provider_reason=provider_reason,
+            effective_enabled=effective_enabled, route_type=rtype,
             effective=effective, effective_reason=effective_reason, executable=executable,
             executable_available=executable_available,
         ))
@@ -150,6 +162,7 @@ def compute_status(
             route=route, provider="vllm", transport="openai-compatible",
             billing="shared", maturity="configured", configured_enabled=configured_enabled,
             configured_reason=configured_reason, route_type="external", effective=effective,
+            provider_enabled=True, provider_reason=None, effective_enabled=(effective == "available"),
             effective_reason=effective_reason, executable=None, executable_available=None,
             source="vllm", model=model, shared_compute=shared_compute,
             max_concurrency=max_concurrency, thinking_default=thinking_default,

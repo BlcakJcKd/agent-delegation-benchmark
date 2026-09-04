@@ -14,7 +14,42 @@ SAME_PROVIDER_NATIVE = {
 }
 
 
-def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[str, Any]]) -> Resolution:
+def _availability_block(
+    chosen: dict[str, Any], availability: dict[str, Any] | None,
+) -> str | None:
+    """Return the user-owned availability reason, if this route is disabled."""
+    if availability is None:
+        return None
+    execution_route = chosen.get("execution_route") or chosen.get("route") or chosen.get("legacy_route")
+    if isinstance(execution_route, str) and execution_route.startswith("vllm:"):
+        entry = availability.get("vllm", {}).get(execution_route[5:])
+        if entry is not None and not entry.get("enabled", True):
+            return entry.get("reason") or "disabled by user configuration"
+        return None
+    provider = chosen.get("provider")
+    provider_entry = availability.get("providers", {}).get(provider, {})
+    if not provider_entry.get("enabled", True):
+        return provider_entry.get("reason") or "disabled by user configuration"
+    model = chosen.get("provider_model_id")
+    # Legacy route names are retained on catalogue entries.  Runtime variants
+    # inherit the same parent route, so this remains stable across generations.
+    model_key = chosen.get("legacy_route") or chosen.get("route") or chosen.get("family")
+    if model_key not in availability.get("models", {}):
+        model_key = chosen.get("execution_route")
+    model_entry = availability.get("models", {}).get(model_key, {})
+    if not model_entry and model in availability.get("models", {}):
+        model_entry = availability["models"][model]
+    if not model_entry.get("enabled", True):
+        return model_entry.get("reason") or "disabled by user configuration"
+    return None
+
+
+def resolve(
+    intent: RunIntent,
+    profile: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    availability: dict[str, Any] | None = None,
+) -> Resolution:
     permitted = set(profile.get("permitted_candidates") or [])
     default_key = profile.get("default_identity_key")
     expanded = expand_runtime_variants(candidates)
@@ -40,6 +75,9 @@ def resolve(intent: RunIntent, profile: dict[str, Any], candidates: list[dict[st
         chosen = filtered[0]
     if chosen is None:
         return Resolution(intent, None, reason="profile has no unambiguous configured candidate; choose one explicitly", state="unavailable", alternatives=alternatives)
+    availability_reason = _availability_block(chosen, availability)
+    if availability_reason is not None:
+        return Resolution(intent, None, reason=availability_reason, state="unavailable", alternatives=alternatives)
     primary = (intent.primary or "").strip().lower()
     aliases = {"codex-cli": "codex", "claude-code": "claude", "antigravity": "gemini", "agy": "gemini"}
     primary = aliases.get(primary, primary)
