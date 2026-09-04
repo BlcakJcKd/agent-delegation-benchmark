@@ -79,6 +79,10 @@ class HarnessRegistryTests(unittest.TestCase):
         self.assertEqual(agy["eligibility"]["public_characterization"], "supported")
         self.assertEqual(agy["eligibility"]["hidden_benchmark"], "unsupported")
         self.assertIn("independent candidate-tool subprocess", agy["reason"])
+        self.assertEqual(agy["version"], "1.1.26")
+        self.assertEqual(agy["capabilities"]["filesystem_containment"], "unsupported")
+        self.assertEqual(agy["capabilities"]["tool_network_containment"], "unsupported")
+        self.assertEqual(agy["capabilities"]["tool_trace"], "unavailable")
         self.assertEqual(agy["telemetry"]["request_metric_semantics"], "harness_session")
         self.assertEqual(agy["telemetry"]["tool_event_telemetry"], "unavailable")
 

@@ -60,10 +60,14 @@ eka config disable-model <model> --reason "paused"
 executable is never overwritten. Pre-cutover delegation entry points have
 been removed from the Ekalavya installation surface.
 
-`status`, `models`, `profiles`, `history`, and `spend` are read-only. The
-explicit `models refresh` path accepts provider discovery data and records new
+`status`, `profiles`, `history`, and `spend` are read-only. The `models` list
+and explicit `models refresh` path accept provider discovery data and record new
 entries as candidates; it does not download models, start servers, or alter a
 profile default. Persistent provider/model configuration remains user-owned.
+Lifecycle promotion is a separate explicit action: inspect exact identities
+with `eka models --json`, then use `eka models promote ID --basis
+operational_efficiency`. Adding `--set-default --profile flash
+--default-reasoning low` also changes that user-owned profile default.
 
 ## Safety and evidence
 

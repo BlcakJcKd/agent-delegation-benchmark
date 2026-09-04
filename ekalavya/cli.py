@@ -20,11 +20,11 @@ from delegation.status_cli import _print_human, build_report
 from delegation.vllm import inspect_vllm_routes
 
 from . import __version__
-from .catalogue import load_catalogue, save_catalogue
+from .catalogue import PROMOTION_BASES, load_catalogue, promote, save_catalogue
 from .config import config_root, migrate_legacy_config
 from .executor import execute
 from .harness_registry import current_registry, validate_registry
-from .ledger import connect, default_db_path, finalize_run, record_availability, record_resolution, record_run, upsert_model
+from .ledger import connect, default_db_path, finalize_run, record_availability, record_promotion_event, record_resolution, record_run, upsert_model
 from .migrate import migrate_all
 from .resolver import resolve
 from benchmark.review_bundle import create_review_bundle
@@ -144,7 +144,41 @@ def cmd_profiles(args: argparse.Namespace) -> int:
 
 def cmd_models(args: argparse.Namespace) -> int:
     _, path, _ = _paths()
-    if getattr(args, "refresh", False):
+    if getattr(args, "action", None) == "promote":
+        target = getattr(args, "target", None)
+        entries = load_catalogue(path)
+        match = next((entry for entry in entries if entry.get("identity_key") == target), None)
+        if match is None:
+            print(f"unknown catalogue identity: {target}; use eka models --json to inspect exact identity keys", file=sys.stderr)
+            return 2
+        reason = getattr(args, "promotion_reason", None) or "explicit promotion"
+        updated = promote(entries, target, reason, promotion_basis=args.basis)
+        if getattr(args, "set_default", False):
+            profile_name = getattr(args, "profile", None)
+            if not profile_name:
+                print("--set-default requires --profile PROFILE", file=sys.stderr)
+                return 2
+            profiles_path = _paths()[2]
+            profiles = _profiles(profiles_path)
+            profile = next((item for item in profiles if item.get("name") == profile_name), None)
+            if profile is None:
+                print(f"unknown profile: {profile_name}", file=sys.stderr)
+                return 2
+            profile["default_identity_key"] = target
+            if getattr(args, "default_reasoning", None):
+                profile["default_reasoning"] = args.default_reasoning
+            profile["promotion_basis"] = args.basis
+            profile["promotion_reason"] = reason
+            tmp = profiles_path.with_name(f".{profiles_path.name}.{os.getpid()}.tmp")
+            tmp.write_text(json.dumps(profiles, indent=2, sort_keys=True) + "\n")
+            os.chmod(tmp, 0o600)
+            tmp.replace(profiles_path)
+        save_catalogue(path, updated)
+        conn = connect()
+        record_promotion_event(conn, target, from_state=match.get("lifecycle"), to_state="current", reason=reason, promotion_basis=args.basis)
+        _json_or_text({"action": "promote", "identity_key": target, "promotion_basis": args.basis, "promotion_reason": reason, "set_default": bool(getattr(args, "set_default", False))}, args.json)
+        return 0
+    if getattr(args, "action", None) == "refresh":
         # Explicit refresh is intentionally file-driven in V1; it cannot silently
         # contact providers or promote candidates.
         if not args.source:
@@ -288,7 +322,7 @@ def _parser() -> argparse.ArgumentParser:
     def common(q): q.add_argument("--json", action="store_true")
     q=sub.add_parser("status", help="network-free catalogue/profile overview"); q.add_argument("--primary"); q.add_argument("--live", action="store_true", help="perform explicit GET-only shared-route observability checks"); common(q); q.set_defaults(func=cmd_status)
     q=sub.add_parser("profiles", help="list stable capability profiles, not raw model IDs"); common(q); q.set_defaults(func=cmd_profiles)
-    q=sub.add_parser("models", help="list catalogue identities; never promotes or downloads"); q.add_argument("refresh", nargs="?", choices=["refresh"], default=None); q.add_argument("--source", type=Path); common(q); q.set_defaults(func=cmd_models)
+    q=sub.add_parser("models", help="list catalogue identities; promotion is explicit"); q.add_argument("action", nargs="?", choices=["refresh", "promote"], default=None); q.add_argument("target", nargs="?"); q.add_argument("--source", type=Path); q.add_argument("--basis", choices=sorted(PROMOTION_BASES - {"unspecified"}), default="unspecified"); q.add_argument("--promotion-reason"); q.add_argument("--set-default", action="store_true"); q.add_argument("--profile"); q.add_argument("--default-reasoning", choices=["low", "medium", "high"]); common(q); q.set_defaults(func=cmd_models)
     q=sub.add_parser("config", help="inspect or explicitly mutate user-owned availability configuration"); q.add_argument("action", nargs="?", choices=["list", "migrate", "enable", "disable", "enable-provider", "disable-provider", "enable-model", "disable-model"]); q.add_argument("target", nargs="?"); q.add_argument("--reason"); common(q); q.set_defaults(func=cmd_config)
     q=sub.add_parser("history"); q.add_argument("--profile"); q.add_argument("--provider"); q.add_argument("--model"); q.add_argument("--limit", type=int, default=20); common(q); q.set_defaults(func=cmd_history)
     q=sub.add_parser("spend"); common(q); q.set_defaults(func=cmd_spend)
@@ -304,5 +338,5 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command == "models": args.refresh = args.refresh == "refresh"
+    if args.command == "models": args.refresh = args.action == "refresh"
     return args.func(args)
