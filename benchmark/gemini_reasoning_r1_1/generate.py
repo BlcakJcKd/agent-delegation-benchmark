@@ -683,11 +683,12 @@ def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dic
         files = {name: _replace_all(content, replacements) for name, content in files.items()}
     elif family == "R2_api_compat":
         test = files["tests/test_contract.py"]
-        test = test.replace('"/a"', '"/c"').replace('"/b"', '"/d"')
-        test = test.replace('Client("x")', 'Client("service.example")')
-        test = test.replace('Client("x",', 'Client("service.example",')
-        test = test.replace('old_client("x",', 'old_client("service.example",')
-        test = test.replace('make_client("x",', 'make_client("service.example",')
+        test = test.replace("'/a'", "'/c'").replace("'/b'", "'/d'")
+        test = test.replace("'https://example.test'", "'https://service.example.test'")
+        test = test.replace("Client('x')", "Client('service.example')")
+        test = test.replace("Client('x',", "Client('service.example',")
+        test = test.replace("old_client('x',", "old_client('service.example',")
+        test = test.replace("make_client('x',", "make_client('service.example',")
         files["tests/test_contract.py"] = test
     elif family == "R3_scientific_pipeline":
         replacements = (
@@ -699,7 +700,7 @@ def _fresh_variant(family: str, files: dict[str, str], prompt: str) -> tuple[dic
         )
         files = {name: _replace_all(content, replacements) for name, content in files.items()}
     elif family == "R4_config_state":
-        files["tests/test_contract.py"] = _replace_all(files["tests/test_contract.py"], (("ada", "eve"), ("lin", "zoe")))
+        files["tests/test_contract.py"] = _replace_all(files["tests/test_contract.py"], (("'ada'", "'eve'"), ("'lin'", "'zoe'")))
     return files, prompt + "\nThis is a fresh matched R1.1 task variant; preserve the same observable contract."
 
 
